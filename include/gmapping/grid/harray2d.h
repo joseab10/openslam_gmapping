@@ -35,7 +35,7 @@ class HierarchicalArray2D: public Array2D<autoptr< Array2D<Cell> > >{
 		const PointSet& getActiveArea() const {return m_activeArea; }
 		inline void allocActiveArea();
 	protected:
-		virtual Array2D<Cell> * createPatch(const IntPoint& p) const;
+		virtual Array2D<Cell> *createPatch(const IntPoint &p) const;
 		PointSet m_activeArea;
 		int m_patchMagnitude;
 		int m_patchSize;

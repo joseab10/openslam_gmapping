@@ -28,31 +28,28 @@
 using namespace std;
 using namespace GMapping;
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
 
-  if (argc != 2) {
-    cerr << "Usage:  " << argv[0] << " [initifle]" << endl;
-    exit(0);
-  }
-  
-  ConfigFile cfg;
-  cfg.read(argv[argc-1]);
+    if (argc != 2) {
+        cerr << "Usage:  " << argv[0] << " [initifle]" << endl;
+        exit(0);
+    }
 
-  cout << "-- values from configfile --" << endl;
-  cfg.dumpValues(cout);
+    ConfigFile cfg;
+    cfg.read(argv[argc - 1]);
 
-  cout << "-- adding a value --" << endl;
-  cfg.value("unkown","unkown",std::string("the new value!"));
+    cout << "-- values from configfile --" << endl;
+    cfg.dumpValues(cout);
 
-
+    cout << "-- adding a value --" << endl;
+    cfg.value("unkown", "unkown", std::string("the new value!"));
 
 
+    cout << "-- values from configfile & added values --" << endl;
+    cfg.dumpValues(cout);
 
-  cout << "-- values from configfile & added values --" << endl;
-  cfg.dumpValues(cout);
+    if (((std::string) cfg.value("unkown", "unkown", std::string("the new value!"))) != std::string("the new value!"))
+        cerr << "strange error, check strings" << endl;
 
-  if ( ((std::string) cfg.value("unkown","unkown",std::string("the new value!"))) != std::string("the new value!"))
-    cerr << "strange error, check strings" << endl;
-
-  return 0;
+    return 0;
 }

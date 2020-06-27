@@ -34,5 +34,5 @@ setqualifier: inline void set##name(type name) {member.name=name;}
 #define STRUCT_PARAM_GET(member, type, name, qualifier, setqualifier, getqualifier)\
 getqualifier: inline type get##name() const {return member.name;}\
 
-#define convertStringArgument(var,val,buf) if (!strcmp(buf,#val)) var=val
+#define convertStringArgument(var, val, buf) if (!strcmp(buf,#val)) var=val
 #endif

@@ -26,39 +26,39 @@
 
 using namespace GMapping;
 
-int  main (int argc, char ** argv){
-  cerr << "GMAPPING copyright 2004 by Giorgio Grisetti, Cyrill Stachniss," << endl ;
-  cerr << "and Wolfram Burgard. To be published under the CreativeCommons license," << endl ;
-  cerr << "see: http://creativecommons.org/licenses/by-nc-sa/2.0/" << endl << endl;
+int main(int argc, char **argv) {
+    cerr << "GMAPPING copyright 2004 by Giorgio Grisetti, Cyrill Stachniss," << endl;
+    cerr << "and Wolfram Burgard. To be published under the CreativeCommons license," << endl;
+    cerr << "see: http://creativecommons.org/licenses/by-nc-sa/2.0/" << endl << endl;
 
 
-	GridSlamProcessorThread* gsp=  new GridSlamProcessorThread;
-	if (gsp->init(argc, argv)){
-		cout << "GSP INIT ERROR" << endl;
-		return -1;
-	}
-	cout <<"GSP INITIALIZED"<< endl;
-	if (gsp->loadFiles()){
-		cout <<"GSP READFILE ERROR"<< endl;
-		return -2;
-	}
-	cout <<"FILES LOADED"<< endl;
-	gsp->setMapUpdateTime(1000000);
-	gsp->start();
-	cout <<"THREAD STARTED"<< endl;
-	bool done=false;
-	while (!done){
-		GridSlamProcessorThread::EventDeque events=gsp->getEvents();
-		for (GridSlamProcessorThread::EventDeque::iterator it=events.begin(); it!=events.end(); it++){
-			cout << flush;
-			GridSlamProcessorThread::DoneEvent* doneEvent=dynamic_cast<GridSlamProcessorThread::DoneEvent*>(*it);
-			if (doneEvent){
-				done=true;
-				cout <<"DONE!"<< endl;
-				gsp->stop();
-			}
-			if (*it)
-				delete(*it);
-		}
-	}
+    GridSlamProcessorThread *gsp = new GridSlamProcessorThread;
+    if (gsp->init(argc, argv)) {
+        cout << "GSP INIT ERROR" << endl;
+        return -1;
+    }
+    cout << "GSP INITIALIZED" << endl;
+    if (gsp->loadFiles()) {
+        cout << "GSP READFILE ERROR" << endl;
+        return -2;
+    }
+    cout << "FILES LOADED" << endl;
+    gsp->setMapUpdateTime(1000000);
+    gsp->start();
+    cout << "THREAD STARTED" << endl;
+    bool done = false;
+    while (!done) {
+        GridSlamProcessorThread::EventDeque events = gsp->getEvents();
+        for (GridSlamProcessorThread::EventDeque::iterator it = events.begin(); it != events.end(); it++) {
+            cout << flush;
+            GridSlamProcessorThread::DoneEvent *doneEvent = dynamic_cast<GridSlamProcessorThread::DoneEvent *>(*it);
+            if (doneEvent) {
+                done = true;
+                cout << "DONE!" << endl;
+                gsp->stop();
+            }
+            if (*it)
+                delete (*it);
+        }
+    }
 }

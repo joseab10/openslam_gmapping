@@ -34,33 +34,52 @@
 
 typedef std::deque<double> DoubleDeque;
 
-class QGraphPainter :  public QWidget{
-	Q_OBJECT
-	public:
-		QGraphPainter( QWidget * parent = 0, const char * name = 0, WFlags f = 0);
-		virtual ~QGraphPainter();
-	public slots:
-		void clear();
-		void valueAdded(double);
-		void valueAdded(double, double, double);
-		void setYReference(double y);
-		void disableYReference();
-		void setRange(double min, double max);
-		void start(int period);
-		void setTitle(const char* title);
-		void setAutoscale(bool a);
-		bool getAutoscale() const;
-	protected:
-		virtual void timerEvent(QTimerEvent * te);
-		virtual void resizeEvent(QResizeEvent *);
-		double min, max, reference;
-		DoubleDeque values;
-		bool autoscale;
-		bool m_useYReference;
-		int timer;
-		virtual void paintEvent ( QPaintEvent *paintevent );
-		QPixmap * m_pixmap;
-		QString title;
+class QGraphPainter : public QWidget {
+    Q_OBJECT
+public:
+    QGraphPainter(QWidget *parent = 0, const char *name = 0, WFlags f = 0);
+
+    virtual ~QGraphPainter();
+
+public
+    slots:
+            void
+
+    clear();
+
+    void valueAdded(double);
+
+    void valueAdded(double, double, double);
+
+    void setYReference(double y);
+
+    void disableYReference();
+
+    void setRange(double min, double max);
+
+    void start(int period);
+
+    void setTitle(const char *title);
+
+    void setAutoscale(bool a);
+
+    bool getAutoscale() const;
+
+protected:
+    virtual void timerEvent(QTimerEvent *te);
+
+    virtual void resizeEvent(QResizeEvent *);
+
+    double min, max, reference;
+    DoubleDeque values;
+    bool autoscale;
+    bool m_useYReference;
+    int timer;
+
+    virtual void paintEvent(QPaintEvent *paintevent);
+
+    QPixmap *m_pixmap;
+    QString title;
 };
 
 #endif

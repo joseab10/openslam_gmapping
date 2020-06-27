@@ -81,7 +81,8 @@ class Map{
 		inline Storage& storage() { return m_storage; }
 		inline const Storage& storage() const { return m_storage; }
 		DoubleArray2D* toDoubleArray() const;
-	        Map<double, DoubleArray2D, false>* toDoubleMap() const;
+
+    Map<double, DoubleArray2D, false> *toDoubleMap() const;
 		
 	protected:
 		Point m_center;
