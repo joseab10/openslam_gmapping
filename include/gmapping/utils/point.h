@@ -44,6 +44,11 @@ namespace GMapping {
         return p1.x * p2.x + p1.y * p2.y;
     }
 
+    template<class T>
+    inline bool operator==(const point<T> &p1, const point<T> &p2) {
+        return (p1.x == p2.x) && (p1.y == p2.y);
+    }
+
 
     template<class T, class A>
     struct orientedpoint : public point<T> {

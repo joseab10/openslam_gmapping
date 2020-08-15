@@ -48,6 +48,8 @@ namespace GMapping {
 */
 
         m_linePoints = new IntPoint[20000];
+
+        m_decayModel = true; // TODO: get from params
     }
 
     ScanMatcher::~ScanMatcher() {
@@ -212,6 +214,146 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
         m_activeAreaComputed = true;
     }
 
+    /**
+     * Computes the length of the beam segment that crosses through a given map cell.
+     * Used for the Decay Rate model.
+     * # TODO : Check if GridLineTraversal uses Bresenham algorithm (does not include all cells crossed by beam).
+     * # TODO : If so, try using Wu's algorithm with aliasing to compute r_i as well.
+     *
+     * @param map (ScanMatcherMap) Map with discretised cells
+     * @param beamStart (Point) The x,y position of the laser sensor
+     * @param beamEnd (Point) The x,y position of the beam's endpoint (hit or maxrange)
+     * @param cell (IntPoint) The x,y position of the cell to be checked in integer units (discrete)
+     * @return (double) The length r_i of the segment of beam contained within the cell. Returns 0 if the beam is outside the cell.
+     */
+    double ScanMatcher::computeCellR(ScanMatcherMap &map, Point beamStart, Point beamEnd, IntPoint cell) {
+
+        if (!m_decayModel)
+            return 0;
+
+        Point cellCenter = map.map2world(cell);
+        double delta = map.getDelta() / 2;
+
+        bool cellIsStartPt = map.world2map(beamStart) == cell,
+             cellIsEndPt   = map.world2map(beamEnd) == cell;
+
+        // Current Cell horizontal and vertical grid lines
+        double cx0 = cellCenter.x - delta,
+               cx1 = cellCenter.x + delta,
+               cy0 = cellCenter.y - delta,
+               cy1 = cellCenter.y + delta;
+
+        double dy = beamEnd.y - beamStart.y,
+               dx = beamEnd.x - beamStart.x;
+
+        bool cx0InsideBeam = (beamStart.x < cx0 && beamEnd.x > cx0) || (beamEnd.x < cx0 && beamStart.x > cx0),
+             cx1InsideBeam = (beamStart.x < cx1 && beamEnd.x > cx1) || (beamEnd.x < cx1 && beamStart.x > cx1),
+             cy0InsideBeam = (beamStart.y < cy0 && beamEnd.y > cy0) || (beamEnd.y < cy0 && beamStart.y > cy0),
+             cy1InsideBeam = (beamStart.y < cy1 && beamEnd.y > cy1) || (beamEnd.y < cy1 && beamStart.y > cy1);
+
+        double r = 0;
+        if (abs(dx) < 1e-6){ // Beam is vertical
+            if (beamStart.x < cx0 || beamStart.x > cx1) // Beam outside
+                return 0;
+            else if (cellIsStartPt){
+                double cy = cy0InsideBeam ? cy0 : cy1;
+                return abs(beamStart.y - cy);
+            }
+            else if (cellIsEndPt){
+                double cy = cy0InsideBeam ? cy0 : cy1;
+                return abs(beamEnd.y - cy);
+            }
+            else
+                return 2 * delta;
+        }
+        else if (abs(dy) < 1e-6){ // Beam is Horizontal
+            if (beamStart.y < cy0 || beamStart.y > cy1)
+                return 0;
+            else if (cellIsStartPt){
+                double cx = cx0InsideBeam ? cx0 : cx1;
+                return abs(beamStart.x - cx);
+            }
+            else if (cellIsEndPt){
+                double cx = cx0InsideBeam ? cx0 : cx1;
+                return abs(beamEnd.x - cx);
+            }
+            else
+                return 2 * delta;
+        }
+        else {
+            double m = dy / dx,
+                   b = beamEnd.y - m * beamEnd.x;
+
+            // Intersections of beam with grid lines
+            double ix0 = (cy0 - b) / m,
+                   ix1 = (cy1 - b) / m,
+                   iy0 = m * cx0 + b,
+                   iy1 = m * cx1 + b,
+                   tmp;
+
+            // Straighten up the interval order
+            if (ix0 > ix1) {
+                tmp = ix0;
+                ix0 = ix1;
+                ix1 = tmp;
+            }
+            if (iy0 > iy1) {
+                tmp = iy0;
+                iy0 = iy1;
+                iy1 = tmp;
+            }
+
+            // If the beam doesn't fall inside the cell (Why shouldn't it though?)
+            if (cx0 >= ix1 || ix0 >= cx1 || cy0 >= iy1 || iy0 >= cy1)
+                return 0;
+
+            // Find the intersections of the x and y intervals
+            double ex0 = cx0 > ix0 ? cx0 : ix0,
+                   ex1 = cx1 > ix1 ? ix1 : cx1,
+                   ey0 = cy0 > iy0 ? cy0 : iy0,
+                   ey1 = cy1 > iy1 ? iy1 : cy1;
+
+            Point start, end;
+
+            // If the beam endpoints are in cell
+            if (cellIsStartPt){
+                start = beamStart;
+
+                /* Then, figure out which of the two intersection points lies within the beam
+                to compute the distance between the beam start|end and the intersect point. */
+                if (ex0 >= beamStart.x && ex0 <= beamEnd.x && ey0 >= beamStart.y && ey0 <= beamEnd.y){
+                    end.x = ex0;
+                    end.y = ey0;
+                }
+                else {
+                    end.x = ex1;
+                    end.y = ey1;
+                }
+
+            }
+            else if (cellIsEndPt){
+                start = beamEnd;
+                if (ex0 >= beamStart.x && ex0 <= beamEnd.x && ey0 >= beamStart.y && ey0 <= beamEnd.y){
+                    end.x = ex0;
+                    end.y = ey0;
+                }
+                else {
+                    end.x = ex1;
+                    end.y = ey1;
+                }
+            }
+            else {
+                start = Point(ex0, ey0);
+                end = Point(ex1, ey1);
+            }
+
+            return euclidianDist(start, end);
+
+        }
+
+        return 0;
+    }
+
     double ScanMatcher::registerScan(ScanMatcherMap &map, const OrientedPoint &p, const double *readings) {
         if (!m_activeAreaComputed)
             computeActiveArea(map, p, readings);
@@ -237,31 +379,40 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                     d = m_usableRange;
                 Point phit = lp + Point(d * cos(lp.theta + *angle), d * sin(lp.theta + *angle));
                 IntPoint p1 = map.world2map(phit);
+                // Distance that the ray traveled inside the map cell
+                double ri = 0;
                 //IntPoint linePoints[20000] ;
                 GridLineTraversalLine line;
                 line.points = m_linePoints;
                 GridLineTraversal::gridLine(p0, p1, &line);
-                for (int i = 0; i < line.num_points - 1; i++) {
+                int i = 0;
+                for (i = 0; i < line.num_points - 1; i++) {
                     PointAccumulator &cell = map.cell(line.points[i]);
                     double e = -cell.entropy();
-                    cell.update(false, Point(0, 0));
+                    ri = computeCellR(map, lp, phit, line.points[i]);
+                    cell.update(false, Point(0, 0), ri);
                     e += cell.entropy();
                     esum += e;
                 }
                 if (d < m_usableRange) {
                     double e = -map.cell(p1).entropy();
-                    map.cell(p1).update(true, phit);
+                    ri = computeCellR(map, lp, phit, line.points[line.num_points - 1]);
+                    map.cell(p1).update(true, phit, ri);
                     e += map.cell(p1).entropy();
                     esum += e;
                 }
-            } else {
-                if (*r > m_laserMaxRange || *r > m_usableRange || *r == 0.0 || isnan(*r)) continue;
+            }
+            else {
+                if (*r > m_laserMaxRange || *r > m_usableRange || *r == 0.0 || isnan(*r))
+                    continue;
+
                 Point phit = lp;
                 phit.x += *r * cos(lp.theta + *angle);
                 phit.y += *r * sin(lp.theta + *angle);
                 IntPoint p1 = map.world2map(phit);
                 assert(p1.x >= 0 && p1.y >= 0);
-                map.cell(p1).update(true, phit);
+                double ri = computeCellR(map, lp, phit, p1);
+                map.cell(p1).update(true, phit, ri);
             }
         //cout  << "informationGain=" << -esum << endl;
         return esum;

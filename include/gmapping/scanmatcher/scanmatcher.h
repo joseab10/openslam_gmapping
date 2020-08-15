@@ -69,6 +69,9 @@ namespace GMapping {
         unsigned int m_laserBeams;
         double m_laserAngles[LASER_MAXBEAMS];
         //OrientedPoint m_laserPose;
+
+        double computeCellR(ScanMatcherMap &map, Point beamStart, Point beamEnd, IntPoint cell);
+
     PARAM_SET_GET(OrientedPoint, laserPose, protected, public, public)
 
     PARAM_SET_GET(double, laserMaxRange, protected, public, public)
@@ -98,6 +101,8 @@ namespace GMapping {
     PARAM_SET_GET(double, lasamplestep, protected, public, public)
 
     PARAM_SET_GET(bool, generateMap, protected, public, public)
+
+    PARAM_SET_GET(bool, decayModel, protected, public, public)
 
     PARAM_SET_GET(double, enlargeStep, protected, public, public)
 
