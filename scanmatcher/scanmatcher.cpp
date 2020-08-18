@@ -49,7 +49,7 @@ namespace GMapping {
 
         m_linePoints = new IntPoint[20000];
 
-        m_decayModel = true; // TODO: get from params
+        m_decayModel = false;
     }
 
     ScanMatcher::~ScanMatcher() {
@@ -874,7 +874,7 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
 
     void ScanMatcher::setMatchingParameters
             (double urange, double range, double sigma, int kernsize, double lopt, double aopt, int iterations,
-             double likelihoodSigma, unsigned int likelihoodSkip) {
+             double likelihoodSigma, unsigned int likelihoodSkip, bool decayModel) {
         m_usableRange = urange;
         m_laserMaxRange = range;
         m_kernelSize = kernsize;
@@ -884,6 +884,7 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
         m_gaussianSigma = sigma;
         m_likelihoodSigma = likelihoodSigma;
         m_likelihoodSkip = likelihoodSkip;
+        m_decayModel = decayModel;
     }
 
 };

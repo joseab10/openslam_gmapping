@@ -194,10 +194,10 @@ namespace GMapping {
     void GridSlamProcessor::setMatchingParameters(double urange, double range, double sigma, int kernsize, double lopt,
                                                   double aopt,
                                                   int iterations, double likelihoodSigma, double likelihoodGain,
-                                                  unsigned int likelihoodSkip) {
+                                                  unsigned int likelihoodSkip, bool decayModel) {
         m_obsSigmaGain = likelihoodGain;
         m_matcher.setMatchingParameters(urange, range, sigma, kernsize, lopt, aopt, iterations, likelihoodSigma,
-                                        likelihoodSkip);
+                                        likelihoodSkip, decayModel);
         if (m_infoStream)
             m_infoStream << " -maxUrange " << urange
                          << " -maxUrange " << range

@@ -151,7 +151,7 @@ namespace GMapping {
 
         void setMatchingParameters(double urange, double range, double sigma, int kernsize, double lopt, double aopt,
                                    int iterations, double likelihoodSigma = 1, double likelihoodGain = 1,
-                                   unsigned int likelihoodSkip = 0);
+                                   unsigned int likelihoodSkip = 0, bool decayModel = false);
 
         void setMotionModelParameters(double srr, double srt, double str, double stt);
 

@@ -36,7 +36,7 @@ namespace GMapping {
 
         void setMatchingParameters
                 (double urange, double range, double sigma, int kernsize, double lopt, double aopt, int iterations,
-                 double likelihoodSigma = 1, unsigned int likelihoodSkip = 0);
+                 double likelihoodSigma = 1, unsigned int likelihoodSkip = 0, bool decayModel = false);
 
         void invalidateActiveArea();
 
