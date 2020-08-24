@@ -15,9 +15,9 @@ typedef Array2D<double> DoubleArray2D;
 template <class Cell, class Storage, const bool isClass=true> 
 class Map{
 	public:
-		Map(int mapSizeX, int mapSizeY, double delta);
-		Map(const Point& center, double worldSizeX, double worldSizeY, double delta);
-		Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta);
+		Map(int mapSizeX, int mapSizeY, double delta, bool decayModel = false);
+		Map(const Point& center, double worldSizeX, double worldSizeY, double delta, bool decayModel = false);
+		Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta, bool decayModel = false);
 		/* the standard implementation works filen in this case*/
 		//Map(const Map& g);
 		//Map& operator =(const Map& g);
@@ -62,6 +62,28 @@ class Map{
 		  return cell(Point(x, y));
 		}
 
+		void setAlpha(double alpha){
+		    m_alpha = alpha;
+		}
+		void setBeta(double beta){
+		    m_beta = beta;
+		}
+		double getAlpha(){
+		    return m_alpha;
+		}
+		double getBeta(){
+		    return m_beta;
+		}
+
+		double alpha(const IntPoint& p);
+		inline double alpha(int x, int y) const{
+		    return alpha(IntPoint(x, y));
+		}
+		double beta(const IntPoint& p);
+        inline double beta(int x, int y) const{
+            return beta(IntPoint(x, y));
+        }
+
 		inline bool isInside(int x, int y) const {
 		  return m_storage.cellState(IntPoint(x,y))&Inside;
 		}
@@ -90,6 +112,8 @@ class Map{
 		Storage m_storage;
 		int m_mapSizeX, m_mapSizeY;
 		int m_sizeX2, m_sizeY2;
+		double m_alpha, m_beta;
+		bool m_decayModel;
 	static const Cell m_unknown;
 };
 
@@ -99,7 +123,7 @@ template <class Cell, class Storage, const bool isClass>
   const Cell  Map<Cell,Storage,isClass>::m_unknown = Cell(-1);
 
 template <class Cell, class Storage, const bool isClass>
-Map<Cell,Storage,isClass>::Map(int mapSizeX, int mapSizeY, double delta):
+Map<Cell,Storage,isClass>::Map(int mapSizeX, int mapSizeY, double delta, bool decayModel):
 	m_storage(mapSizeX, mapSizeY){
 	m_worldSizeX=mapSizeX * delta;
 	m_worldSizeY=mapSizeY * delta;
@@ -107,10 +131,11 @@ Map<Cell,Storage,isClass>::Map(int mapSizeX, int mapSizeY, double delta):
 	m_center=Point(0.5*m_worldSizeX, 0.5*m_worldSizeY);
 	m_sizeX2=m_mapSizeX>>1;
 	m_sizeY2=m_mapSizeY>>1;
+	m_decayModel = decayModel;
 }
 
 template <class Cell, class Storage, const bool isClass>
-Map<Cell,Storage,isClass>::Map(const Point& center, double worldSizeX, double worldSizeY, double delta):
+Map<Cell,Storage,isClass>::Map(const Point& center, double worldSizeX, double worldSizeY, double delta, bool decayModel):
 	m_storage((int)ceil(worldSizeX/delta), (int)ceil(worldSizeY/delta)){
 	m_center=center;
 	m_worldSizeX=worldSizeX;
@@ -120,10 +145,12 @@ Map<Cell,Storage,isClass>::Map(const Point& center, double worldSizeX, double wo
 	m_mapSizeY=m_storage.getYSize()<<m_storage.getPatchSize();
 	m_sizeX2=m_mapSizeX>>1;
 	m_sizeY2=m_mapSizeY>>1;
+
+	m_decayModel = decayModel;
 }
 
 template <class Cell, class Storage, const bool isClass>
-Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta):
+Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta, bool decayModel):
 	m_storage((int)ceil((xmax-xmin)/delta), (int)ceil((ymax-ymin)/delta)){
 	m_center=center;
 	m_worldSizeX=xmax-xmin;
@@ -133,6 +160,8 @@ Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, do
 	m_mapSizeY=m_storage.getYSize()<<m_storage.getPatchSize();
 	m_sizeX2=(int)round((m_center.x-xmin)/m_delta);
 	m_sizeY2=(int)round((m_center.y-ymin)/m_delta);
+
+	m_decayModel = decayModel;
 }
 		
 template <class Cell, class Storage, const bool isClass>
@@ -211,6 +240,31 @@ Cell& Map<Cell,Storage,isClass>::cell(const Point& p) {
 	// this will never happend. Just to satify the compiler..
 	return m_storage.cell(ip);
 }
+
+template <class Cell, class Storage, const bool isClass>
+    double Map<Cell, Storage, isClass>::alpha(const IntPoint &p){
+
+        AccessibilityState s = m_storage.cellState(p);
+        if (! s&Inside)
+            assert(0);
+
+        Cell cell = m_storage.cell(p);
+        return cell.n;
+    }
+
+template <class Cell, class Storage, const bool isClass>
+   double Map<Cell, Storage, isClass>::beta(const IntPoint &p){
+
+        AccessibilityState s = m_storage.cellState(p);
+        if (! s&Inside)
+            assert(0);
+
+        Cell cell = m_storage.cell(p);
+        if (m_decayModel)
+            return cell.R;
+        else
+            return cell.visits - cell.n;
+    }
 
 template <class Cell, class Storage, const bool isClass>
   const Cell& Map<Cell,Storage,isClass>::cell(const IntPoint& p) const {

@@ -268,7 +268,7 @@ namespace GMapping {
     }
 
     void GridSlamProcessor::init(unsigned int size, double xmin, double ymin, double xmax, double ymax, double delta,
-                                 OrientedPoint initialPose) {
+                                 OrientedPoint initialPose, bool decayModel, double alpha0, double beta0) {
         m_xmin = xmin;
         m_ymin = ymin;
         m_xmax = xmax;
@@ -286,7 +286,9 @@ namespace GMapping {
 
         m_particles.clear();
         TNode *node = new TNode(initialPose, 0, 0, 0);
-        ScanMatcherMap lmap(Point(xmin + xmax, ymin + ymax) * .5, xmax - xmin, ymax - ymin, delta);
+        ScanMatcherMap lmap(Point(xmin + xmax, ymin + ymax) * .5, xmax - xmin, ymax - ymin, delta, decayModel);
+        lmap.setAlpha(alpha0);
+        lmap.setBeta(beta0);
         for (unsigned int i = 0; i < size; i++) {
             m_particles.push_back(Particle(lmap));
             m_particles.back().pose = initialPose;
