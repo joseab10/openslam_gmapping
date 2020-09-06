@@ -147,11 +147,14 @@ namespace GMapping {
         void setSensorMap(const SensorMap &smap);
 
         void init(unsigned int size, double xmin, double ymin, double xmax, double ymax, double delta,
-                  OrientedPoint initialPose = OrientedPoint(0, 0, 0), bool decayModel=false, double alpha0=1.0, double beta0=1.0);
+                  OrientedPoint initialPose = OrientedPoint(0, 0, 0),
+                  ScanMatcherMap::MapModel mapModel=ScanMatcherMap::MapModel::ReflectionModel, double alpha0=1.0, double beta0=1.0);
 
         void setMatchingParameters(double urange, double range, double sigma, int kernsize, double lopt, double aopt,
                                    int iterations, double likelihoodSigma = 1, double likelihoodGain = 1,
-                                   unsigned int likelihoodSkip = 0, bool decayModel = false);
+                                   unsigned int likelihoodSkip = 0,
+                                   ScanMatcherMap::MapModel mapModel = ScanMatcherMap::MapModel::ReflectionModel,
+                                   ScanMatcher::ParticleWeighting particleWeighting = ScanMatcher::ParticleWeighting::ClosestMeanHitLikelihood);
 
         void setMotionModelParameters(double srr, double srt, double str, double stt);
 

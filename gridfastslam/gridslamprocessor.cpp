@@ -194,10 +194,11 @@ namespace GMapping {
     void GridSlamProcessor::setMatchingParameters(double urange, double range, double sigma, int kernsize, double lopt,
                                                   double aopt,
                                                   int iterations, double likelihoodSigma, double likelihoodGain,
-                                                  unsigned int likelihoodSkip, bool decayModel) {
+                                                  unsigned int likelihoodSkip, ScanMatcherMap::MapModel mapModel,
+                                                  ScanMatcher::ParticleWeighting particleWeighting) {
         m_obsSigmaGain = likelihoodGain;
         m_matcher.setMatchingParameters(urange, range, sigma, kernsize, lopt, aopt, iterations, likelihoodSigma,
-                                        likelihoodSkip, decayModel);
+                                        likelihoodSkip, mapModel, particleWeighting);
         if (m_infoStream)
             m_infoStream << " -maxUrange " << urange
                          << " -maxUrange " << range
@@ -268,7 +269,9 @@ namespace GMapping {
     }
 
     void GridSlamProcessor::init(unsigned int size, double xmin, double ymin, double xmax, double ymax, double delta,
-                                 OrientedPoint initialPose, bool decayModel, double alpha0, double beta0) {
+                                 OrientedPoint initialPose,
+                                 ScanMatcherMap::MapModel mapModel,
+                                 double alpha0, double beta0) {
         m_xmin = xmin;
         m_ymin = ymin;
         m_xmax = xmax;
@@ -286,7 +289,8 @@ namespace GMapping {
 
         m_particles.clear();
         TNode *node = new TNode(initialPose, 0, 0, 0);
-        ScanMatcherMap lmap(Point(xmin + xmax, ymin + ymax) * .5, xmax - xmin, ymax - ymin, delta, decayModel);
+        ScanMatcherMap lmap(Point(xmin + xmax, ymin + ymax) * .5, xmax - xmin, ymax - ymin,
+                delta, mapModel);
         lmap.setAlpha(alpha0);
         lmap.setBeta(beta0);
         for (unsigned int i = 0; i < size; i++) {

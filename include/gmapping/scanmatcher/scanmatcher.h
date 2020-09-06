@@ -3,6 +3,7 @@
 
 #include "gmapping/scanmatcher/icp.h"
 #include "gmapping/scanmatcher/smmap.h"
+#include "gmapping/scanmatcher/gridlinetraversal.h"
 #include <gmapping/utils/macro_params.h>
 #include <gmapping/utils/stat.h>
 #include <iostream>
@@ -11,6 +12,19 @@
 #define LASER_MAXBEAMS 2048
 
 namespace GMapping {
+
+    /*
+    enum MapModel {
+        ReflectionModel,
+        ExpDecayModel
+    };
+
+    enum ParticleWeighting {
+        ClosestMeanHitLikelihood,
+        ForwardSensorModel,
+        MeasurementLikelihood
+    };
+    */
 
     class ScanMatcher {
     public:
@@ -34,9 +48,17 @@ namespace GMapping {
         void setLaserParameters
                 (unsigned int beams, double *angles, const OrientedPoint &lpose);
 
+        enum ParticleWeighting {
+            ClosestMeanHitLikelihood,
+            ForwardSensorModel,
+            MeasurementLikelihood
+        };
+
         void setMatchingParameters
                 (double urange, double range, double sigma, int kernsize, double lopt, double aopt, int iterations,
-                 double likelihoodSigma = 1, unsigned int likelihoodSkip = 0, bool decayModel = false);
+                 double likelihoodSigma = 1, unsigned int likelihoodSkip = 0,
+                 ScanMatcherMap::MapModel mapModel = ScanMatcherMap::MapModel::ReflectionModel,
+                 ParticleWeighting particleWeighting = ParticleWeighting::ClosestMeanHitLikelihood);
 
         void invalidateActiveArea();
 
@@ -44,6 +66,7 @@ namespace GMapping {
 
         inline double
         icpStep(OrientedPoint &pret, const ScanMatcherMap &map, const OrientedPoint &p, const double *readings) const;
+
 
         inline double score(const ScanMatcherMap &map, const OrientedPoint &p, const double *readings) const;
 
@@ -70,7 +93,7 @@ namespace GMapping {
         double m_laserAngles[LASER_MAXBEAMS];
         //OrientedPoint m_laserPose;
 
-        double computeCellR(ScanMatcherMap &map, Point beamStart, Point beamEnd, IntPoint cell);
+        double computeCellR(const ScanMatcherMap &map, Point beamStart, Point beamEnd, IntPoint cell) const;
 
     PARAM_SET_GET(OrientedPoint, laserPose, protected, public, public)
 
@@ -102,7 +125,9 @@ namespace GMapping {
 
     PARAM_SET_GET(bool, generateMap, protected, public, public)
 
-    PARAM_SET_GET(bool, decayModel, protected, public, public)
+    PARAM_SET_GET(ScanMatcherMap::MapModel, mapModel, protected, public, public)
+
+    PARAM_SET_GET(ParticleWeighting, particleWeighting, protected, public, public)
 
     PARAM_SET_GET(double, enlargeStep, protected, public, public)
 
@@ -247,6 +272,8 @@ namespace GMapping {
         lp.x += cos(p.theta) * m_laserPose.x - sin(p.theta) * m_laserPose.y;
         lp.y += sin(p.theta) * m_laserPose.x + cos(p.theta) * m_laserPose.y;
         lp.theta += m_laserPose.theta;
+        IntPoint ilp = map.world2map(lp);
+
         double noHit = nullLikelihood / (m_likelihoodSigma);
         unsigned int skip = 0;
         unsigned int c = 0;
@@ -254,44 +281,144 @@ namespace GMapping {
         for (const double *r = readings + m_initialBeamsSkip; r < readings + m_laserBeams; r++, angle++) {
             skip++;
             skip = skip > m_likelihoodSkip ? 0 : skip;
-            if (*r > m_usableRange) continue;
+            //if (*r > m_usableRange) continue;
+            double range = *r;
+            bool out_of_range = false;
+
+            if (range > m_usableRange) {
+                if (m_particleWeighting == ClosestMeanHitLikelihood)
+                    continue;
+                else {
+                    range = m_usableRange;
+                    out_of_range = true;
+                }
+            }
+
             if (skip) continue;
             Point phit = lp;
-            phit.x += *r * cos(lp.theta + *angle);
-            phit.y += *r * sin(lp.theta + *angle);
+            phit.x += range * cos(lp.theta + *angle);
+            phit.y += range * sin(lp.theta + *angle);
             IntPoint iphit = map.world2map(phit);
-            Point pfree = lp;
-            pfree.x += (*r - freeDelta) * cos(lp.theta + *angle);
-            pfree.y += (*r - freeDelta) * sin(lp.theta + *angle);
-            pfree = pfree - phit;
-            IntPoint ipfree = map.world2map(pfree);
-            bool found = false;
-            Point bestMu(0., 0.);
-            for (int xx = -m_kernelSize; xx <= m_kernelSize; xx++)
-                for (int yy = -m_kernelSize; yy <= m_kernelSize; yy++) {
-                    IntPoint pr = iphit + IntPoint(xx, yy);
-                    IntPoint pf = pr + ipfree;
-                    //AccessibilityState s=map.storage().cellState(pr);
-                    //if (s&Inside && s&Allocated){
-                    const PointAccumulator &cell = map.cell(pr);
-                    const PointAccumulator &fcell = map.cell(pf);
-                    if (((double) cell) > m_fullnessThreshold && ((double) fcell) < m_fullnessThreshold) {
-                        Point mu = phit - cell.mean();
-                        if (!found) {
-                            bestMu = mu;
-                            found = true;
-                        } else
-                            bestMu = (mu * mu) < (bestMu * bestMu) ? mu : bestMu;
+
+            /*
+             * Original Particle weight computation method from openslam_gmapping.
+             * It computes a point pfree which is (roughly) one grid cell before the hit point in the
+             * direction of the beam.
+             * Then, for a given window around the hit point (+/- kernelSize in x and y), it checks if each cell
+             * is occupied, and the cell in pfree relative to it is free according to a threshold value.
+             * If it is the case, then the difference between the actual hitpoint and the mean of all hits of said cell
+             * is computed. Finally, the minimum of all distances from hits and means is used to compute a
+             * log likelihood from a gaussian, and added to the particle as it's weight.
+             */
+            if (m_particleWeighting == ClosestMeanHitLikelihood) {
+
+
+                Point pfree = lp;
+                pfree.x += (range - freeDelta) * cos(lp.theta + *angle);
+                pfree.y += (range - freeDelta) * sin(lp.theta + *angle);
+                pfree = pfree - phit;
+                IntPoint ipfree = map.world2map(pfree);
+                bool found = false;
+                Point bestMu(0., 0.);
+                for (int xx = -m_kernelSize; xx <= m_kernelSize; xx++)
+                    for (int yy = -m_kernelSize; yy <= m_kernelSize; yy++) {
+                        IntPoint pr = iphit + IntPoint(xx, yy);
+                        IntPoint pf = pr + ipfree;
+                        //AccessibilityState s=map.storage().cellState(pr);
+                        //if (s&Inside && s&Allocated){
+                        const PointAccumulator &cell = map.cell(pr);
+                        const PointAccumulator &fcell = map.cell(pf);
+                        if (((double) cell) > m_fullnessThreshold && ((double) fcell) < m_fullnessThreshold) {
+                            Point mu = phit - cell.mean();
+                            if (!found) {
+                                bestMu = mu;
+                                found = true;
+                            } else
+                                bestMu = (mu * mu) < (bestMu * bestMu) ? mu : bestMu;
+                        }
+                        //}
                     }
-                    //}
+                if (found) {
+                    s += exp(-1. / m_gaussianSigma * bestMu * bestMu);
+                    c++;
                 }
-            if (found) {
-                s += exp(-1. / m_gaussianSigma * bestMu * bestMu);
-                c++;
+                if (!skip) {
+                    double f = (-1. / m_likelihoodSigma) * (bestMu * bestMu);
+                    l += (found) ? f : noHit;
+                }
             }
-            if (!skip) {
-                double f = (-1. / m_likelihoodSigma) * (bestMu * bestMu);
-                l += (found) ? f : noHit;
+            else {
+                /*
+                 * For all other methods, we will consider all cells crossed by the beam and not just the endpoint.
+                 */
+                GridLineTraversalLine line;
+                line.points = m_linePoints;
+                GridLineTraversal::gridLine(ilp, iphit, &line);
+
+                double alpha = map.getAlpha();
+                double beta  = map.getBeta();
+
+                int i = 0;
+                // For all the cells that the beam travelled through (misses)
+                for (i = 0; i < line.num_points - 1 + out_of_range; i++) {
+                    const IntPoint i_miss_cell = line.points[i];
+                    const PointAccumulator &miss_cell = map.cell(i_miss_cell);
+                    int Hi = miss_cell.n;
+
+                    if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
+                        int Mi = miss_cell.visits - 1 - Hi; // Subtract 1 to get the previous number of misses
+
+                        if (m_particleWeighting == MeasurementLikelihood)
+                            l += (Mi + beta) / (Hi + alpha + Mi + beta);
+                        else if (m_particleWeighting == ForwardSensorModel)
+                            l += 1 - (Hi + alpha) / (Hi + alpha + Mi + beta);
+                    }
+                    else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
+                        double ri = computeCellR(map, lp, phit, i_miss_cell);
+                        double Ri = miss_cell.R - ri; // subtract ri to get the previous Ri
+
+                        if (m_particleWeighting == MeasurementLikelihood)
+                            l += pow(((Ri + beta) / (Ri + beta + ri)), (Hi + alpha));
+                        else if (m_particleWeighting == ForwardSensorModel)
+                            l += exp(-((Hi + alpha) / (Ri + beta) * ri));
+                    }
+                }
+                // For the endpoint cell
+                if (! out_of_range){
+                    IntPoint i_hit_cell = line.points[line.num_points -1];
+                    const PointAccumulator &hit_cell = map.cell(i_hit_cell);
+
+                    int Hi = hit_cell.n - 1; // Subtract 1 to get the previous number of hits
+
+                    if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
+                        int Mi = hit_cell.visits - 1 - Hi; // Subtract 1 to get the previous number of misses
+
+                        if (m_particleWeighting == MeasurementLikelihood)
+                            l += (Hi + alpha) / (Hi + alpha + Mi + beta);
+                        // FIXME: Are they the same????
+                        else if (m_particleWeighting == ForwardSensorModel)
+                            l += (Hi + alpha) / (Hi + alpha + Mi + beta);
+                    }
+                    else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
+                        double ri = computeCellR(map, lp, phit, i_hit_cell);
+                        double Ri = hit_cell.R - ri; // subtract ri to get the previous Ri
+
+                        if (m_particleWeighting == MeasurementLikelihood)
+                            l += pow(((Ri + beta) / (Ri + beta + ri)), (Hi + alpha)) *
+                                 ((Hi + alpha) / (Ri + beta + ri));
+                        else if (m_particleWeighting == ForwardSensorModel){
+                            double lambdai = (Hi + alpha) / (Ri + beta);
+                            l += lambdai * exp(- (lambdai * ri));
+                        }
+
+                    }
+                }
+                if (! out_of_range){
+                    PointAccumulator cell = map.cell(iphit);
+                    Point mu = phit - cell.mean();
+                    s += exp(-1. / m_gaussianSigma * mu * mu);
+                }
+
             }
         }
         return c;

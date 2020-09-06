@@ -4,7 +4,6 @@
 #include <iostream>
 
 #include "gmapping/scanmatcher/scanmatcher.h"
-#include "gmapping/scanmatcher/gridlinetraversal.h"
 //#define GENERATE_MAPS
 
 namespace GMapping {
@@ -49,7 +48,8 @@ namespace GMapping {
 
         m_linePoints = new IntPoint[20000];
 
-        m_decayModel = false;
+        m_mapModel = ScanMatcherMap::MapModel::ReflectionModel;
+        m_particleWeighting = ClosestMeanHitLikelihood;
     }
 
     ScanMatcher::~ScanMatcher() {
@@ -220,15 +220,16 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
      * # TODO : Check if GridLineTraversal uses Bresenham algorithm (does not include all cells crossed by beam).
      * # TODO : If so, try using Wu's algorithm with aliasing to compute r_i as well.
      *
-     * @param map (ScanMatcherMap) Map with discretised cells
+     * @param map (const ScanMatcherMap) Map with discretized cells
      * @param beamStart (Point) The x,y position of the laser sensor
      * @param beamEnd (Point) The x,y position of the beam's endpoint (hit or maxrange)
      * @param cell (IntPoint) The x,y position of the cell to be checked in integer units (discrete)
      * @return (double) The length r_i of the segment of beam contained within the cell. Returns 0 if the beam is outside the cell.
      */
-    double ScanMatcher::computeCellR(ScanMatcherMap &map, Point beamStart, Point beamEnd, IntPoint cell) {
+    double ScanMatcher::computeCellR(const ScanMatcherMap &map, Point beamStart, Point beamEnd, IntPoint cell) const{
 
-        if (!m_decayModel)
+        // Only execute for Exponential Decay Map Models
+        if (m_mapModel != ScanMatcherMap::MapModel::ExpDecayModel)
             return 0;
 
         Point cellCenter = map.map2world(cell);
@@ -470,7 +471,7 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
     double ScanMatcher::icpOptimize(OrientedPoint &pnew, const ScanMatcherMap &map, const OrientedPoint &init,
                                     const double *readings) const {
         double currentScore;
-        double sc = score(map, init, readings);;
+        double sc = score(map, init, readings);
         OrientedPoint start = init;
         pnew = init;
         int iterations = 0;
@@ -874,7 +875,8 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
 
     void ScanMatcher::setMatchingParameters
             (double urange, double range, double sigma, int kernsize, double lopt, double aopt, int iterations,
-             double likelihoodSigma, unsigned int likelihoodSkip, bool decayModel) {
+             double likelihoodSigma, unsigned int likelihoodSkip,
+             ScanMatcherMap::MapModel mapModel, ParticleWeighting particleWeighting) {
         m_usableRange = urange;
         m_laserMaxRange = range;
         m_kernelSize = kernsize;
@@ -884,7 +886,9 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
         m_gaussianSigma = sigma;
         m_likelihoodSigma = likelihoodSigma;
         m_likelihoodSkip = likelihoodSkip;
-        m_decayModel = decayModel;
+
+        m_mapModel = mapModel;
+        m_particleWeighting = particleWeighting;
     }
 
 };

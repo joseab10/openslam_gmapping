@@ -15,9 +15,18 @@ typedef Array2D<double> DoubleArray2D;
 template <class Cell, class Storage, const bool isClass=true> 
 class Map{
 	public:
-		Map(int mapSizeX, int mapSizeY, double delta, bool decayModel = false);
-		Map(const Point& center, double worldSizeX, double worldSizeY, double delta, bool decayModel = false);
-		Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta, bool decayModel = false);
+
+        enum MapModel {
+            ReflectionModel,
+            ExpDecayModel
+        };
+
+		Map(int mapSizeX, int mapSizeY, double delta,
+		        MapModel mapModel = ReflectionModel);
+		Map(const Point& center, double worldSizeX, double worldSizeY, double delta,
+		        MapModel mapModel = ReflectionModel);
+		Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta,
+		        MapModel mapModel = ReflectionModel);
 		/* the standard implementation works filen in this case*/
 		//Map(const Map& g);
 		//Map& operator =(const Map& g);
@@ -68,10 +77,10 @@ class Map{
 		void setBeta(double beta){
 		    m_beta = beta;
 		}
-		double getAlpha(){
+		double getAlpha() const{
 		    return m_alpha;
 		}
-		double getBeta(){
+		double getBeta() const{
 		    return m_beta;
 		}
 
@@ -113,7 +122,7 @@ class Map{
 		int m_mapSizeX, m_mapSizeY;
 		int m_sizeX2, m_sizeY2;
 		double m_alpha, m_beta;
-		bool m_decayModel;
+		MapModel m_mapModel;
 	static const Cell m_unknown;
 };
 
@@ -123,7 +132,7 @@ template <class Cell, class Storage, const bool isClass>
   const Cell  Map<Cell,Storage,isClass>::m_unknown = Cell(-1);
 
 template <class Cell, class Storage, const bool isClass>
-Map<Cell,Storage,isClass>::Map(int mapSizeX, int mapSizeY, double delta, bool decayModel):
+Map<Cell,Storage,isClass>::Map(int mapSizeX, int mapSizeY, double delta, MapModel mapModel):
 	m_storage(mapSizeX, mapSizeY){
 	m_worldSizeX=mapSizeX * delta;
 	m_worldSizeY=mapSizeY * delta;
@@ -131,11 +140,13 @@ Map<Cell,Storage,isClass>::Map(int mapSizeX, int mapSizeY, double delta, bool de
 	m_center=Point(0.5*m_worldSizeX, 0.5*m_worldSizeY);
 	m_sizeX2=m_mapSizeX>>1;
 	m_sizeY2=m_mapSizeY>>1;
-	m_decayModel = decayModel;
+
+	m_mapModel = mapModel;
 }
 
 template <class Cell, class Storage, const bool isClass>
-Map<Cell,Storage,isClass>::Map(const Point& center, double worldSizeX, double worldSizeY, double delta, bool decayModel):
+Map<Cell,Storage,isClass>::Map(const Point& center, double worldSizeX, double worldSizeY, double delta,
+        MapModel mapModel):
 	m_storage((int)ceil(worldSizeX/delta), (int)ceil(worldSizeY/delta)){
 	m_center=center;
 	m_worldSizeX=worldSizeX;
@@ -146,11 +157,12 @@ Map<Cell,Storage,isClass>::Map(const Point& center, double worldSizeX, double wo
 	m_sizeX2=m_mapSizeX>>1;
 	m_sizeY2=m_mapSizeY>>1;
 
-	m_decayModel = decayModel;
+	m_mapModel = mapModel;
 }
 
 template <class Cell, class Storage, const bool isClass>
-Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta, bool decayModel):
+Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, double xmax, double ymax, double delta,
+        MapModel mapModel):
 	m_storage((int)ceil((xmax-xmin)/delta), (int)ceil((ymax-ymin)/delta)){
 	m_center=center;
 	m_worldSizeX=xmax-xmin;
@@ -161,7 +173,7 @@ Map<Cell,Storage,isClass>::Map(const Point& center, double xmin, double ymin, do
 	m_sizeX2=(int)round((m_center.x-xmin)/m_delta);
 	m_sizeY2=(int)round((m_center.y-ymin)/m_delta);
 
-	m_decayModel = decayModel;
+	m_mapModel = mapModel;
 }
 		
 template <class Cell, class Storage, const bool isClass>
@@ -260,7 +272,7 @@ template <class Cell, class Storage, const bool isClass>
             assert(0);
 
         Cell cell = m_storage.cell(p);
-        if (m_decayModel)
+        if (m_mapModel == ExpDecayModel)
             return cell.R;
         else
             return cell.visits - cell.n;
