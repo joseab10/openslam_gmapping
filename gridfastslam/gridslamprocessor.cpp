@@ -161,6 +161,9 @@ namespace GMapping {
             if (it->node)
                 delete it->node;
             //cout << "l=" << it->weight<< endl;
+
+            if (m_outputStream.is_open())
+                m_outputStream.close();
         }
 
 # ifdef MAP_CONSISTENCY_CHECK
@@ -453,6 +456,11 @@ namespace GMapping {
                     m_infoStream << "neff= " << m_neff << endl;
                 }
                 if (m_outputStream.is_open()) {
+                    m_outputStream << setiosflags(ios::fixed) << setprecision(6);
+                    m_outputStream << "NORM_WEIGHTS" << " ";
+                    for (std::vector<double>::const_iterator it = m_weights.begin(); it != m_weights.end(); it++)
+                        m_outputStream << *it << " ";
+                    m_outputStream << endl;
                     m_outputStream << setiosflags(ios::fixed) << setprecision(6);
                     m_outputStream << "NEFF " << m_neff << endl;
                 }

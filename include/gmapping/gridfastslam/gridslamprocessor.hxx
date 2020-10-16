@@ -10,10 +10,19 @@ inline void GridSlamProcessor::scanMatch(const double *plainReading) {
     // sample a new pose from each scan in the reference
 
     double sumScore = 0;
+
+    if (m_outputStream.is_open()) {
+        m_outputStream << "OPT_SCORE " << m_particles.size() << " ";
+        //m_outputStream << std::setiosflags(std::ios::fixed) << std::setprecision(6);
+    }
+
     for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
         OrientedPoint corrected;
         double score, l, s;
         score = m_matcher.optimize(corrected, it->map, it->pose, plainReading);
+        if (m_outputStream.is_open())
+            m_outputStream << score << " " << (score > m_minimumScore) << " ";
+
         //    it->pose=corrected;
         if (score > m_minimumScore) {
             it->pose = corrected;
@@ -36,6 +45,8 @@ inline void GridSlamProcessor::scanMatch(const double *plainReading) {
         m_matcher.invalidateActiveArea();
         m_matcher.computeActiveArea(it->map, it->pose, plainReading);
     }
+    if (m_outputStream.is_open())
+        m_outputStream << std::endl;
     if (m_infoStream)
         m_infoStream << "Average Scan Matching Score=" << sumScore / m_particles.size() << std::endl;
 }
