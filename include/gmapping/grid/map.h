@@ -71,6 +71,20 @@ class Map{
 		  return cell(Point(x, y));
 		}
 
+		inline double cell_value(const IntPoint& p);
+
+		inline double cell_value(int x, int y) {
+		    return cell_value(IntPoint(x, y));
+		}
+
+		inline double cell_value(const Point& p){
+		    return cell_value(world2map(p));
+		}
+
+		inline double cell_value(double x, double y){
+		    return cell_value(Point(x, y));
+		}
+
 		void setAlpha(double alpha){
 		    m_alpha = alpha;
 		}
@@ -251,6 +265,23 @@ Cell& Map<Cell,Storage,isClass>::cell(const Point& p) {
 
 	// this will never happend. Just to satify the compiler..
 	return m_storage.cell(ip);
+}
+
+template <class Cell, class Storage, const bool isClass>
+double Map<Cell,Storage,isClass>::cell_value(const IntPoint &p) {
+
+    AccessibilityState s=m_storage.cellState(p);
+    if (! s&Inside)
+        assert(0);
+
+    Cell cell = m_storage.cell(p);
+
+    if (m_mapModel == ReflectionModel)
+        return (double) cell;
+
+    if (m_mapModel == ExpDecayModel)
+        return cell.R != 0 ? cell.n / cell.R : -1;
+
 }
 
 template <class Cell, class Storage, const bool isClass>
