@@ -15,11 +15,13 @@ namespace GMapping {
         PointAccumulator(int i=-1): acc(0,0), n(0), visits(0){assert(i==-1);}
         */
         /*after begin*/
-        PointAccumulator() : acc(0, 0), n(0), visits(0), R(0) {}
+        PointAccumulator() : acc(0, 0), n(0), visits(0), R(0), acc_inc(0, 0), n_inc(0), visits_inc(0), R_inc(0) {}
 
-        PointAccumulator(int i) : acc(0, 0), n(0), visits(0), R(0) { assert(i == -1); }
+        PointAccumulator(int i) : acc(0, 0), n(0), visits(0), R(0), acc_inc(0, 0), n_inc(0), visits_inc(0), R_inc(0) { assert(i == -1); }
 
         /*after end*/
+        inline void reset_inc();
+
         inline void update(bool value, const Point &p = Point(0, 0), double r = 0);
 
         inline Point mean() const { return 1. / n * Point(acc.x, acc.y); }
@@ -37,21 +39,38 @@ namespace GMapping {
 
         static PointAccumulator *unknown_ptr;
         FloatPoint acc;
+        FloatPoint acc_inc;
         double R; // Total distance that all rays travel in the cell during mapping
-        int n, visits; // Hits, Visits = Hits + Misses
+        double R_inc;
+        int n, visits;// Hits, Visits = Hits + Misses
+        int n_inc, visits_inc;
 
         inline double entropy() const;
     };
 
+    void PointAccumulator::reset_inc() {
+        acc_inc.x = 0;
+        acc_inc.y = 0;
+        n_inc = 0;
+        visits_inc = 0;
+        R_inc = 0;
+    }
+
     void PointAccumulator::update(bool value, const Point &p, double r) {
         if (value) {
+            acc_inc.x += static_cast<float>(p.x);
             acc.x += static_cast<float>(p.x);
+            acc_inc.y += static_cast<float>(p.y);
             acc.y += static_cast<float>(p.y);
+            n_inc++;
             n++;
+            visits_inc += SIGHT_INC;
             visits += SIGHT_INC;
         } else
+            visits_inc++;
             visits++;
 
+        R_inc += r;
         R += r;
     }
 

@@ -2,6 +2,8 @@
 #include <limits>
 #include <list>
 #include <iostream>
+#include <unordered_set>
+#include <boost/functional/hash.hpp>
 
 #include "gmapping/scanmatcher/scanmatcher.h"
 //#define GENERATE_MAPS
@@ -368,16 +370,21 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
         lp.theta += m_laserPose.theta;
         IntPoint p0 = map.world2map(lp);
 
+        typedef std::pair<int, int> CellKey;
+        std::unordered_set<CellKey, boost::hash<CellKey>> visitedCells;
 
         const double *angle = m_laserAngles + m_initialBeamsSkip;
         double esum = 0;
         for (const double *r = readings + m_initialBeamsSkip; r < readings + m_laserBeams; r++, angle++)
             if (m_generateMap) {
                 double d = *r;
+                bool out_of_range = false;
                 if (d > m_laserMaxRange || d == 0.0 || isnan(d))
                     continue;
-                if (d > m_usableRange)
+                if (d > m_usableRange) {
+                    out_of_range = true;
                     d = m_usableRange;
+                }
                 Point phit = lp + Point(d * cos(lp.theta + *angle), d * sin(lp.theta + *angle));
                 IntPoint p1 = map.world2map(phit);
                 // Distance that the ray traveled inside the map cell
@@ -387,16 +394,35 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                 line.points = m_linePoints;
                 GridLineTraversal::gridLine(p0, p1, &line);
                 int i = 0;
-                for (i = 0; i < line.num_points - 1; i++) {
+                for (i = 0; i < line.num_points - 1 + out_of_range; i++) {
                     PointAccumulator &cell = map.cell(line.points[i]);
                     double e = -cell.entropy();
                     ri = computeCellR(map, lp, phit, line.points[i]);
+
+                    CellKey visited_cell = CellKey(line.points[i].x, line.points[i].y);
+                    // If first time the cell is visited for this scan
+                    if (visitedCells.find(visited_cell) == visitedCells.end()) {
+                        // Reset it's incremental values and add it to the list of visited cells
+                        cell.reset_inc();
+                        visitedCells.insert(visited_cell);
+                    }
                     cell.update(false, Point(0, 0), ri);
+
                     e += cell.entropy();
                     esum += e;
                 }
-                if (d < m_usableRange) {
+                if (! out_of_range) {
                     double e = -map.cell(p1).entropy();
+
+                    CellKey visited_cell = CellKey(p1.x, p1.y);
+
+                    // If first time the cell is visited for this scan
+                    if (visitedCells.find(visited_cell) == visitedCells.end()) {
+                        // Reset it's incremental values and add it to the list of visited cells
+                        map.cell(p1).reset_inc();
+                        visitedCells.insert(visited_cell);
+                    }
+
                     ri = computeCellR(map, lp, phit, line.points[line.num_points - 1]);
                     map.cell(p1).update(true, phit, ri);
                     e += map.cell(p1).entropy();
@@ -413,8 +439,19 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                 IntPoint p1 = map.world2map(phit);
                 assert(p1.x >= 0 && p1.y >= 0);
                 double ri = computeCellR(map, lp, phit, p1);
+
+                CellKey visited_cell = CellKey(p1.x, p1.y);
+
+                // If first time the cell is visited for this scan
+                if (visitedCells.find(visited_cell) == visitedCells.end()) {
+                    // Reset it's incremental values and add it to the list of visited cells
+                    map.cell(p1).reset_inc();
+                    visitedCells.insert(visited_cell);
+                }
+
                 map.cell(p1).update(true, phit, ri);
             }
+
         //cout  << "informationGain=" << -esum << endl;
         return esum;
     }

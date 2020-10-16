@@ -355,32 +355,54 @@ namespace GMapping {
                 line.points = m_linePoints;
                 GridLineTraversal::gridLine(ilp, iphit, &line);
 
-                double alpha = map.getAlpha();
-                double beta  = map.getBeta();
+                double alpha_prior = map.getAlpha();
+                double beta_prior  = map.getBeta();
 
                 int i = 0;
                 // For all the cells that the beam travelled through (misses)
                 for (i = 0; i < line.num_points - 1 + out_of_range; i++) {
                     const IntPoint i_miss_cell = line.points[i];
                     const PointAccumulator &miss_cell = map.cell(i_miss_cell);
-                    int Hi = miss_cell.n;
+                    int Hi = miss_cell.n - miss_cell.n_inc;
 
                     if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
-                        int Mi = miss_cell.visits - 1 - Hi; // Subtract 1 to get the previous number of misses
+                        int Mi = miss_cell.visits - Hi - miss_cell.visits_inc; // Subtract 1 to get the previous number of misses
 
-                        if (m_particleWeighting == MeasurementLikelihood)
-                            l += (Mi + beta) / (Hi + alpha + Mi + beta);
-                        else if (m_particleWeighting == ForwardSensorModel)
-                            l += 1 - (Hi + alpha) / (Hi + alpha + Mi + beta);
+                        double denominator = Hi + alpha_prior + Mi + beta_prior;
+
+                        if (denominator == 0.0)
+                            l += noHit;
+                        else {
+                            if (m_particleWeighting == MeasurementLikelihood)
+                                // p = (Mi + beta) / denominator
+                                l += log(Mi + beta_prior) - log(denominator);
+                            else if (m_particleWeighting == ForwardSensorModel)
+                                // p = 1 - (Hi + alpha) / denominator
+                                l += log(1 - (Hi + alpha_prior) / denominator);
+                        }
                     }
                     else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
                         double ri = computeCellR(map, lp, phit, i_miss_cell);
-                        double Ri = miss_cell.R - ri; // subtract ri to get the previous Ri
+                        double Ri = miss_cell.R - miss_cell.R_inc; // subtract ri to get the previous Ri
 
-                        if (m_particleWeighting == MeasurementLikelihood)
-                            l += pow(((Ri + beta) / (Ri + beta + ri)), (Hi + alpha));
-                        else if (m_particleWeighting == ForwardSensorModel)
-                            l += exp(-((Hi + alpha) / (Ri + beta) * ri));
+                        if (m_particleWeighting == MeasurementLikelihood) {
+                            double denominator = Ri + beta_prior + ri;
+                            if (denominator == 0.0 || Ri + beta_prior == 0.0)
+                                l += noHit;
+                            else
+                                // p = pow(((Ri + beta) / denominator), (Hi + alpha))
+                                l += (Hi + alpha_prior) * (log(Ri + beta_prior) - log(denominator));
+                        }
+                        else if (m_particleWeighting == ForwardSensorModel) {
+                            if (Ri == 0.0)
+                                l += noHit;
+                            else {
+                                //double lambda = (Hi + alpha) / denominator;
+                                double lambda = Hi / Ri;
+                                // p = exp(-(lambda * ri))
+                                l += -(lambda * ri);
+                            }
+                        }
                     }
                 }
                 // For the endpoint cell
@@ -388,35 +410,63 @@ namespace GMapping {
                     IntPoint i_hit_cell = line.points[line.num_points -1];
                     const PointAccumulator &hit_cell = map.cell(i_hit_cell);
 
-                    int Hi = hit_cell.n - 1; // Subtract 1 to get the previous number of hits
+                    int Hi = hit_cell.n - hit_cell.n_inc; // Subtract 1 to get the previous number of hits
 
                     if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
-                        int Mi = hit_cell.visits - 1 - Hi; // Subtract 1 to get the previous number of misses
+                        int Mi = hit_cell.visits - Hi - hit_cell.visits_inc; // Subtract 1 to get the previous number of misses
 
-                        if (m_particleWeighting == MeasurementLikelihood)
-                            l += (Hi + alpha) / (Hi + alpha + Mi + beta);
-                        // FIXME: Are they the same????
-                        else if (m_particleWeighting == ForwardSensorModel)
-                            l += (Hi + alpha) / (Hi + alpha + Mi + beta);
+                        if (m_particleWeighting == MeasurementLikelihood) {
+                            double denominator = Hi + alpha_prior + Mi + beta_prior;
+                            if (denominator == 0)
+                                l += noHit;
+                            else
+                                // p = (Hi + alpha) / denominator
+                                l += log(Hi + alpha_prior) - log(denominator);
+                        }
+                        else if (m_particleWeighting == ForwardSensorModel) {
+                            double denominator = Hi + Mi;
+                            if (denominator == 0)
+                                l += noHit;
+                            else
+                                // p = Hi / denominator
+                                l += log(Hi) - log(denominator);
+                        }
                     }
                     else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
                         double ri = computeCellR(map, lp, phit, i_hit_cell);
-                        double Ri = hit_cell.R - ri; // subtract ri to get the previous Ri
+                        double Ri = hit_cell.R - hit_cell.R_inc; // subtract ri to get the previous Ri
 
-                        if (m_particleWeighting == MeasurementLikelihood)
-                            l += pow(((Ri + beta) / (Ri + beta + ri)), (Hi + alpha)) *
-                                 ((Hi + alpha) / (Ri + beta + ri));
+                        if (m_particleWeighting == MeasurementLikelihood) {
+                            double denominator = Ri + beta_prior + ri;
+                            if (denominator == 0.0)// || Hi + alpha == 0 || Ri + beta == 0)
+                                l += noHit;
+                            else {
+                                double n1 = Ri + beta_prior;
+                                double n2 = Hi + alpha_prior;
+                                // p = pow(((Ri + beta) / denominator), (Hi + alpha)) * ((Hi + alpha) / denominator)
+                                l += log(n2) + (n2 * (log(n1) - log(denominator))) - log(denominator);
+                            }
+                        }
                         else if (m_particleWeighting == ForwardSensorModel){
-                            double lambdai = (Hi + alpha) / (Ri + beta);
-                            l += lambdai * exp(- (lambdai * ri));
+                            double denominator = Ri;// + beta;
+
+                            if (!Hi || denominator == 0.0)
+                                l += noHit;
+                            else {
+                                //double lambda = (Hi + alpha) / denominator;
+                                double lambda = Hi / denominator;
+                                // p = lambda * exp(-(lambda * ri))
+                                l += log(lambda) - (lambda * ri);
+                            }
                         }
 
                     }
                 }
-                if (! out_of_range){
-                    PointAccumulator cell = map.cell(iphit);
+                PointAccumulator cell = map.cell(iphit);
+                if (! out_of_range && cell.n){
                     Point mu = phit - cell.mean();
                     s += exp(-1. / m_gaussianSigma * mu * mu);
+                    c++;
                 }
 
             }
