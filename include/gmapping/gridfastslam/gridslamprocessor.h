@@ -148,7 +148,9 @@ namespace GMapping {
 
         void init(unsigned int size, double xmin, double ymin, double xmax, double ymax, double delta,
                   OrientedPoint initialPose = OrientedPoint(0, 0, 0),
-                  ScanMatcherMap::MapModel mapModel=ScanMatcherMap::MapModel::ReflectionModel, double alpha0=1.0, double beta0=1.0);
+                  ScanMatcherMap::MapModel mapModel=ScanMatcherMap::MapModel::ReflectionModel,
+                  double alpha0=1.0, double beta0=1.0,
+                  bool doImprovePose=true, bool doMapUpdate=true);
 
         void setMatchingParameters(double urange, double range, double sigma, int kernsize, double lopt, double aopt,
                                    int iterations, double likelihoodSigma = 1, double likelihoodGain = 1,
@@ -325,6 +327,9 @@ namespace GMapping {
 
         // stream in which to write the messages
         std::ostream &m_infoStream;
+
+        PARAM_SET_GET(bool, doImprovePose, protected, public, public);
+        PARAM_SET_GET(bool, doMapUpdate, protected, public, public);
 
 
         // the functions below performs side effect on the internal structure,

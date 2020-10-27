@@ -274,7 +274,8 @@ namespace GMapping {
     void GridSlamProcessor::init(unsigned int size, double xmin, double ymin, double xmax, double ymax, double delta,
                                  OrientedPoint initialPose,
                                  ScanMatcherMap::MapModel mapModel,
-                                 double alpha0, double beta0) {
+                                 double alpha0, double beta0,
+                                 bool doImprovePose, bool doMapUpdate) {
         m_xmin = xmin;
         m_ymin = ymin;
         m_xmax = xmax;
@@ -313,6 +314,9 @@ namespace GMapping {
         m_count = 0;
         m_readingCount = 0;
         m_linearDistance = m_angularDistance = 0;
+
+        m_doImprovePose = doImprovePose;
+        m_doMapUpdate = doMapUpdate;
     }
 
     void GridSlamProcessor::processTruePos(const OdometryReading &o) {
@@ -469,9 +473,11 @@ namespace GMapping {
             } else {
                 m_infoStream << "Registering First Scan" << endl;
                 for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
-                    m_matcher.invalidateActiveArea();
-                    m_matcher.computeActiveArea(it->map, it->pose, plainReading);
-                    m_matcher.registerScan(it->map, it->pose, plainReading);
+                    if (m_doMapUpdate) {
+                        m_matcher.invalidateActiveArea();
+                        m_matcher.computeActiveArea(it->map, it->pose, plainReading);
+                        m_matcher.registerScan(it->map, it->pose, plainReading);
+                    }
 
                     // cyr: not needed anymore, particles refer to the root in the beginning!
                     TNode *node = new TNode(it->pose, 0., it->node, 0);

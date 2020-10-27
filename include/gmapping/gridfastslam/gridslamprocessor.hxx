@@ -19,19 +19,22 @@ inline void GridSlamProcessor::scanMatch(const double *plainReading) {
     for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
         OrientedPoint corrected;
         double score, l, s;
-        score = m_matcher.optimize(corrected, it->map, it->pose, plainReading);
-        if (m_outputStream.is_open())
-            m_outputStream << score << " " << (score > m_minimumScore) << " ";
 
-        //    it->pose=corrected;
-        if (score > m_minimumScore) {
-            it->pose = corrected;
-        } else {
-            if (m_infoStream) {
-                m_infoStream << "Scan Matching Failed, using odometry. Likelihood=" << l << std::endl;
-                m_infoStream << "lp:" << m_lastPartPose.x << " " << m_lastPartPose.y << " " << m_lastPartPose.theta
-                             << std::endl;
-                m_infoStream << "op:" << m_odoPose.x << " " << m_odoPose.y << " " << m_odoPose.theta << std::endl;
+        if (m_doImprovePose) {
+            score = m_matcher.optimize(corrected, it->map, it->pose, plainReading);
+            if(m_outputStream.is_open())
+                m_outputStream << score << " " << (score > m_minimumScore) << " ";
+
+            //    it->pose=corrected;
+            if (score > m_minimumScore) {
+                it->pose = corrected;
+            } else {
+                if (m_infoStream) {
+                    m_infoStream << "Scan Matching Failed, using odometry. Likelihood=" << l << std::endl;
+                    m_infoStream << "lp:" << m_lastPartPose.x << " " << m_lastPartPose.y << " " << m_lastPartPose.theta
+                                 << std::endl;
+                    m_infoStream << "op:" << m_odoPose.x << " " << m_odoPose.y << " " << m_odoPose.theta << std::endl;
+                }
             }
         }
 
@@ -149,11 +152,17 @@ inline bool GridSlamProcessor::resample(const double *plainReading, int adaptSiz
         std::cerr << "Deleting old particles...";
         m_particles.clear();
         std::cerr << "Done" << std::endl;
-        std::cerr << "Copying Particles and  Registering  scans...";
+        std::cerr << "Copying Particles";
+
+        if (m_doMapUpdate)
+                     std::cerr << "and  Registering  scans...";
+
         for (ParticleVector::iterator it = temp.begin(); it != temp.end(); it++) {
             it->setWeight(0);
-            m_matcher.invalidateActiveArea();
-            m_matcher.registerScan(it->map, it->pose, plainReading);
+            if (m_doMapUpdate) {
+                m_matcher.invalidateActiveArea();
+                m_matcher.registerScan(it->map, it->pose, plainReading);
+            }
             m_particles.push_back(*it);
         }
         std::cerr << " Done" << std::endl;
@@ -173,8 +182,10 @@ inline bool GridSlamProcessor::resample(const double *plainReading, int adaptSiz
             it->node = node;
 
             //END: BUILDING TREE
-            m_matcher.invalidateActiveArea();
-            m_matcher.registerScan(it->map, it->pose, plainReading);
+            if (m_doMapUpdate) {
+                m_matcher.invalidateActiveArea();
+                m_matcher.registerScan(it->map, it->pose, plainReading);
+            }
             it->previousIndex = index;
             index++;
             node_it++;
