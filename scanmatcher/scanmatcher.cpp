@@ -2,8 +2,6 @@
 #include <limits>
 #include <list>
 #include <iostream>
-#include <unordered_set>
-#include <boost/functional/hash.hpp>
 
 #include "gmapping/scanmatcher/scanmatcher.h"
 //#define GENERATE_MAPS
@@ -174,20 +172,20 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                 if (d > m_usableRange)
                     d = m_usableRange;
                 Point phit = lp + Point(d * cos(lp.theta + *angle), d * sin(lp.theta + *angle));
-                IntPoint p0 = map.world2map(lp);
-                IntPoint p1 = map.world2map(phit);
+                IntPoint lp0 = map.world2map(lp);
+                IntPoint lp1 = map.world2map(phit);
 
                 //IntPoint linePoints[20000] ;
                 GridLineTraversalLine line;
                 line.points = m_linePoints;
-                GridLineTraversal::gridLine(p0, p1, &line);
+                GridLineTraversal::gridLine(lp0, lp1, &line);
                 for (int i = 0; i < line.num_points - 1; i++) {
                     assert(map.isInside(m_linePoints[i]));
                     activeArea.insert(map.storage().patchIndexes(m_linePoints[i]));
                     assert(m_linePoints[i].x >= 0 && m_linePoints[i].y >= 0);
                 }
                 if (d < m_usableRange) {
-                    IntPoint cp = map.storage().patchIndexes(p1);
+                    IntPoint cp = map.storage().patchIndexes(lp1);
                     assert(cp.x >= 0 && cp.y >= 0);
                     activeArea.insert(cp);
                 }
@@ -234,64 +232,63 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
         if (m_mapModel != ScanMatcherMap::MapModel::ExpDecayModel)
             return 0;
 
-        Point cellCenter = map.map2world(cell);
-        double delta = map.getDelta() / 2;
-
         bool cellIsStartPt = map.world2map(beamStart) == cell,
              cellIsEndPt   = map.world2map(beamEnd) == cell;
 
+        Point deltaB = beamEnd - beamStart;
+        // If the beam starts and ends in the cell
+        if (cellIsStartPt && cellIsEndPt)
+            return euclidianDist(beamStart, beamEnd);
+
+        Point cellCenter = map.map2world(cell);
+        double delta = map.getDelta() / 2;
+
         // Current Cell horizontal and vertical grid lines
-        double cx0 = cellCenter.x - delta,
-               cx1 = cellCenter.x + delta,
-               cy0 = cellCenter.y - delta,
-               cy1 = cellCenter.y + delta;
+        Point cb0 = cellCenter - Point(delta, delta),
+              cb1 = cellCenter + Point(delta, delta);
 
-        double dy = beamEnd.y - beamStart.y,
-               dx = beamEnd.x - beamStart.x;
+        bool cx0InsideBeam = (beamStart.x < cb0.x < beamEnd.x) || (beamEnd.x < cb0.x < beamStart.x),
+             cy0InsideBeam = (beamStart.y < cb0.y < beamEnd.y) || (beamEnd.y < cb0.y < beamStart.y),
+             cx1InsideBeam = (beamStart.x < cb1.x < beamEnd.x) || (beamEnd.x < cb1.x < beamStart.x),
+             cy1InsideBeam = (beamStart.y < cb1.y < beamEnd.y) || (beamEnd.y < cb1.y < beamStart.y);
 
-        bool cx0InsideBeam = (beamStart.x < cx0 && beamEnd.x > cx0) || (beamEnd.x < cx0 && beamStart.x > cx0),
-             cx1InsideBeam = (beamStart.x < cx1 && beamEnd.x > cx1) || (beamEnd.x < cx1 && beamStart.x > cx1),
-             cy0InsideBeam = (beamStart.y < cy0 && beamEnd.y > cy0) || (beamEnd.y < cy0 && beamStart.y > cy0),
-             cy1InsideBeam = (beamStart.y < cy1 && beamEnd.y > cy1) || (beamEnd.y < cy1 && beamStart.y > cy1);
+        // If cell not inside of beam
+        if (!((cx0InsideBeam || cx1InsideBeam) && (cy0InsideBeam || cy1InsideBeam)))
+            return 0;
 
-        double r = 0;
-        if (abs(dx) < 1e-6){ // Beam is vertical
-            if (beamStart.x < cx0 || beamStart.x > cx1) // Beam outside
-                return 0;
-            else if (cellIsStartPt){
-                double cy = cy0InsideBeam ? cy0 : cy1;
+        if (abs(deltaB.x) < 1e-6){ // Beam is vertical
+            if (cellIsStartPt){
+                double cy = cy0InsideBeam ? cb0.y : cb1.y;
                 return abs(beamStart.y - cy);
             }
             else if (cellIsEndPt){
-                double cy = cy0InsideBeam ? cy0 : cy1;
+                double cy = cy0InsideBeam ? cb0.y : cb1.y;
                 return abs(beamEnd.y - cy);
             }
             else
                 return 2 * delta;
         }
-        else if (abs(dy) < 1e-6){ // Beam is Horizontal
-            if (beamStart.y < cy0 || beamStart.y > cy1)
-                return 0;
-            else if (cellIsStartPt){
-                double cx = cx0InsideBeam ? cx0 : cx1;
+        else if (abs(deltaB.y) < 1e-6){ // Beam is Horizontal
+            if (cellIsStartPt){
+                double cx = cx0InsideBeam ? cb0.x : cb1.x;
                 return abs(beamStart.x - cx);
             }
             else if (cellIsEndPt){
-                double cx = cx0InsideBeam ? cx0 : cx1;
+                double cx = cx0InsideBeam ? cb0.x : cb1.x;
                 return abs(beamEnd.x - cx);
             }
             else
                 return 2 * delta;
         }
         else {
-            double m = dy / dx,
+            double m = deltaB.y / deltaB.x,
                    b = beamEnd.y - m * beamEnd.x;
 
             // Intersections of beam with grid lines
-            double ix0 = (cy0 - b) / m,
-                   ix1 = (cy1 - b) / m,
-                   iy0 = m * cx0 + b,
-                   iy1 = m * cx1 + b,
+            double ix0 = (cb0.y - b) / m,
+                   ix1 = (cb1.y - b) / m,
+                   iy0 = m * cb0.x + b,
+                   iy1 = m * cb1.x + b,
                    tmp;
 
             // Straighten up the interval order
@@ -307,14 +304,14 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
             }
 
             // If the beam doesn't fall inside the cell (Why shouldn't it though?)
-            if (cx0 >= ix1 || ix0 >= cx1 || cy0 >= iy1 || iy0 >= cy1)
+            if (cb0.x >= ix1 || ix0 >= cb1.x || cb0.y >= iy1 || iy0 >= cb1.y)
                 return 0;
 
             // Find the intersections of the x and y intervals
-            double ex0 = cx0 > ix0 ? cx0 : ix0,
-                   ex1 = cx1 > ix1 ? ix1 : cx1,
-                   ey0 = cy0 > iy0 ? cy0 : iy0,
-                   ey1 = cy1 > iy1 ? iy1 : cy1;
+            double ex0 = cb0.x > ix0 ? cb0.x : ix0,
+                   ey0 = cb0.y > iy0 ? cb0.y : iy0,
+                   ex1 = cb1.x > ix1 ? ix1 : cb1.x,
+                   ey1 = cb1.y > iy1 ? iy1 : cb1.y;
 
             Point start, end;
 
@@ -370,9 +367,6 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
         lp.theta += m_laserPose.theta;
         IntPoint p0 = map.world2map(lp);
 
-        typedef std::pair<int, int> CellKey;
-        std::unordered_set<CellKey, boost::hash<CellKey>> visitedCells;
-
         const double *angle = m_laserAngles + m_initialBeamsSkip;
         double esum = 0;
         for (const double *r = readings + m_initialBeamsSkip; r < readings + m_laserBeams; r++, angle++)
@@ -398,14 +392,6 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                     PointAccumulator &cell = map.cell(line.points[i]);
                     double e = -cell.entropy();
                     ri = computeCellR(map, lp, phit, line.points[i]);
-
-                    CellKey visited_cell = CellKey(line.points[i].x, line.points[i].y);
-                    // If first time the cell is visited for this scan
-                    if (visitedCells.find(visited_cell) == visitedCells.end()) {
-                        // Reset it's incremental values and add it to the list of visited cells
-                        cell.reset_inc();
-                        visitedCells.insert(visited_cell);
-                    }
                     cell.update(false, Point(0, 0), ri);
 
                     e += cell.entropy();
@@ -413,16 +399,6 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                 }
                 if (! out_of_range) {
                     double e = -map.cell(p1).entropy();
-
-                    CellKey visited_cell = CellKey(p1.x, p1.y);
-
-                    // If first time the cell is visited for this scan
-                    if (visitedCells.find(visited_cell) == visitedCells.end()) {
-                        // Reset it's incremental values and add it to the list of visited cells
-                        map.cell(p1).reset_inc();
-                        visitedCells.insert(visited_cell);
-                    }
-
                     ri = computeCellR(map, lp, phit, line.points[line.num_points - 1]);
                     map.cell(p1).update(true, phit, ri);
                     e += map.cell(p1).entropy();
@@ -439,16 +415,6 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                 IntPoint p1 = map.world2map(phit);
                 assert(p1.x >= 0 && p1.y >= 0);
                 double ri = computeCellR(map, lp, phit, p1);
-
-                CellKey visited_cell = CellKey(p1.x, p1.y);
-
-                // If first time the cell is visited for this scan
-                if (visitedCells.find(visited_cell) == visitedCells.end()) {
-                    // Reset it's incremental values and add it to the list of visited cells
-                    map.cell(p1).reset_inc();
-                    visitedCells.insert(visited_cell);
-                }
-
                 map.cell(p1).update(true, phit, ri);
             }
 
@@ -928,5 +894,4 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
         m_particleWeighting = particleWeighting;
     }
 
-};
-
+}
