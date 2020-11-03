@@ -373,9 +373,9 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
             if (m_generateMap) {
                 double d = *r;
                 bool out_of_range = false;
-                if (d > m_laserMaxRange || d == 0.0 || isnan(d))
+                if (d >= m_laserMaxRange || d == 0.0 || isnan(d))
                     continue;
-                if (d > m_usableRange) {
+                if (d >= m_usableRange) {
                     out_of_range = true;
                     d = m_usableRange;
                 }
@@ -892,6 +892,161 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
 
         m_mapModel = mapModel;
         m_particleWeighting = particleWeighting;
+    }
+
+
+    double ScanMatcher::closestMeanHitLikelihood(OrientedPoint &laser_pose, Point &end_point,
+                                                 double reading_range, double reading_bearing,
+                                                 const ScanMatcherMap &map,
+                                                 double &s, unsigned int &c) const {
+        /*
+         * Original Particle weight computation method from openslam_gmapping.
+         * It computes a point pfree which is (roughly) one grid cell before the hit point in the
+         * direction of the beam.
+         * Then, for a given window around the hit point (+/- kernelSize in x and y), it checks if each cell
+         * is occupied, and the cell in pfree relative to it is free according to a threshold value.
+         * If it is the case, then the difference between the actual hitpoint and the mean of all hits of said cell
+         * is computed. Finally, the minimum of all distances from hits and means is used to compute a
+         * log likelihood from a gaussian, and added to the particle as it's weight.
+         */
+
+        if (reading_range > m_usableRange) return 0;
+
+        double freeDelta = map.getDelta() * m_freeCellRatio;
+        double noHit = nullLikelihood / (m_likelihoodSigma);
+
+        IntPoint iphit = map.world2map(end_point);
+
+        Point pfree = laser_pose;
+        pfree.x += (reading_range - freeDelta) * cos(laser_pose.theta + reading_bearing);
+        pfree.y += (reading_range - freeDelta) * sin(laser_pose.theta + reading_bearing);
+        pfree = pfree - end_point;
+        IntPoint ipfree = map.world2map(pfree);
+
+        bool found = false;
+        Point bestMu(0., 0.);
+        for (int xx = -m_kernelSize; xx <= m_kernelSize; xx++)
+            for (int yy = -m_kernelSize; yy <= m_kernelSize; yy++) {
+                IntPoint pr = iphit + IntPoint(xx, yy);
+                IntPoint pf = pr + ipfree;
+                //AccessibilityState s=map.storage().cellState(pr);
+                //if (s&Inside && s&Allocated){
+                const PointAccumulator &cell = map.cell(pr);
+                const PointAccumulator &fcell = map.cell(pf);
+                if (((double) cell) > m_fullnessThreshold && ((double) fcell) < m_fullnessThreshold) {
+                    Point mu = end_point - cell.mean();
+                    if (!found) {
+                        bestMu = mu;
+                        found = true;
+                    } else
+                        bestMu = (mu * mu) < (bestMu * bestMu) ? mu : bestMu;
+                }
+                //}
+            }
+        if (found) {
+            s += exp(-1. / m_gaussianSigma * bestMu * bestMu);
+            c++;
+        }
+        double f = (-1. / m_likelihoodSigma) * (bestMu * bestMu);
+
+        return (found) ? f : noHit;
+    }
+
+    double ScanMatcher::measurementLikelihood(OrientedPoint &laser_pose, Point &end_point,
+                                              double reading_range, double reading_bearing,
+                                              const ScanMatcherMap &map,
+                                              double &s, unsigned int &c) const {
+
+        double l = 0;
+
+        IntPoint ilp = map.world2map(laser_pose);
+        IntPoint iphit = map.world2map(end_point);
+
+        bool out_of_range = reading_range >= m_usableRange;
+
+        GridLineTraversalLine line;
+        line.points = m_linePoints;
+        GridLineTraversal::gridLine(ilp, iphit, &line);
+
+        double alpha_prior = map.getAlpha();
+        double beta_prior  = map.getBeta();
+
+        double numerator;
+        double denominator;
+
+        // For all the cells that the beam travelled through (misses)
+        for (int i = 0; i < line.num_points - 1; i++) {
+            const IntPoint i_miss_cell = line.points[i];
+            const PointAccumulator &visited_cell = map.cell(i_miss_cell);
+            int Hi = visited_cell.n;
+            // cell i reflected the beam if true, travelled through if false.
+            bool delta_i = (i == line.num_points - 1) && !out_of_range;
+
+            if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
+                int Mi = visited_cell.visits - Hi;
+
+                denominator = Hi + alpha_prior + Mi + beta_prior;
+
+                // Ignore a cell if it hasn't been visited in the past.
+                if (denominator == 0.0)
+                    continue;
+
+                // If cell is the endpoint and was a hit
+                if (delta_i)
+                    numerator = Hi + alpha_prior;
+                    // else, the beam travelled through it (or was max_range)
+                else
+                    numerator = Mi + beta_prior;
+
+                if (numerator == 0)
+                    return std::numeric_limits<double>::quiet_NaN();
+                    //return 0;
+                else
+                    l += log(numerator) - log(denominator);
+                    //l *= numerator / denominator;
+            }
+            else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
+                double ri = computeCellR(map, laser_pose, end_point, i_miss_cell);
+                double Ri = visited_cell.R;
+                double exponent = Hi + alpha_prior;
+
+                denominator = Ri + beta_prior + ri;
+                numerator = Ri + beta_prior;
+
+                // Ignore a cell if it hasn't been visited in the past and,
+                // somehow, neither this time (line discretization function returning cells not traversed by beam)
+                if (denominator == 0.0)
+                    continue;
+
+                // If cell is the endpoint and was a hit
+                if (delta_i) {
+                    if (numerator == 0 || exponent == 0)
+                        return std::numeric_limits<double>::quiet_NaN();
+                        //return 0;
+                    else
+                        l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
+                        //l *= pow(numerator / denominator, exponent) * (exponent / denominator);
+                }
+                // else, the beam travelled through it (or was a max_range)
+                else {
+                    if (numerator == 0)
+                        return std::numeric_limits<double>::quiet_NaN();
+                        //return 0;
+                    else
+                        l += exponent * (log(numerator) - log(denominator));
+                        //l *= pow(numerator / denominator, exponent);
+                }
+            }
+        }
+
+        PointAccumulator cell = map.cell(iphit);
+        if (! out_of_range && cell.n){
+            Point mu = end_point - cell.mean();
+            s += exp(-1. / m_gaussianSigma * mu * mu);
+            c++;
+        }
+
+        return l;
     }
 
 }

@@ -7,6 +7,7 @@
 #include <gmapping/utils/macro_params.h>
 #include <gmapping/utils/stat.h>
 #include <iostream>
+#include <limits>
 #include <gmapping/utils/gvalues.h>
 
 #define LASER_MAXBEAMS 2048
@@ -78,6 +79,13 @@ namespace GMapping {
 
         double likelihood(double &_lmax, OrientedPoint &_mean, CovarianceMatrix &_cov, const ScanMatcherMap &map,
                           const OrientedPoint &p, Gaussian3 &odometry, const double *readings, double gain = 180.);
+
+        double closestMeanHitLikelihood(OrientedPoint &laser_pose, Point &end_point,
+                                        double reading_range, double reading_bearing,
+                                        const ScanMatcherMap &map, double &s, unsigned int &c) const;
+        double measurementLikelihood(OrientedPoint &laser_pose, Point &end_point,
+                                     double reading_range, double reading_bearing,
+                                     const ScanMatcherMap &map, double &s, unsigned int &c) const;
 
         inline const double *laserAngles() const { return m_laserAngles; }
 
@@ -272,250 +280,49 @@ namespace GMapping {
         lp.x += cos(p.theta) * m_laserPose.x - sin(p.theta) * m_laserPose.y;
         lp.y += sin(p.theta) * m_laserPose.x + cos(p.theta) * m_laserPose.y;
         lp.theta += m_laserPose.theta;
-        IntPoint ilp = map.world2map(lp);
 
-        double noHit = nullLikelihood / (m_likelihoodSigma);
-        double zerologlikelihood = -50;
         unsigned int skip = 0;
         unsigned int c = 0;
-        double freeDelta = map.getDelta() * m_freeCellRatio;
+
         for (const double *r = readings + m_initialBeamsSkip; r < readings + m_laserBeams; r++, angle++) {
             skip++;
             skip = skip > m_likelihoodSkip ? 0 : skip;
-            //if (*r > m_usableRange) continue;
-            double range = *r;
-            bool out_of_range = false;
-
-            if (range > m_usableRange) {
-                if (m_particleWeighting == ClosestMeanHitLikelihood)
-                    continue;
-                else {
-                    range = m_usableRange;
-                    out_of_range = true;
-                }
-            }
-
             if (skip) continue;
+
+            double range = *r;
+            double tmp_l;
+
             Point phit = lp;
             phit.x += range * cos(lp.theta + *angle);
             phit.y += range * sin(lp.theta + *angle);
-            IntPoint iphit = map.world2map(phit);
-
-            /*
-             * Original Particle weight computation method from openslam_gmapping.
-             * It computes a point pfree which is (roughly) one grid cell before the hit point in the
-             * direction of the beam.
-             * Then, for a given window around the hit point (+/- kernelSize in x and y), it checks if each cell
-             * is occupied, and the cell in pfree relative to it is free according to a threshold value.
-             * If it is the case, then the difference between the actual hitpoint and the mean of all hits of said cell
-             * is computed. Finally, the minimum of all distances from hits and means is used to compute a
-             * log likelihood from a gaussian, and added to the particle as it's weight.
-             */
-            if (m_particleWeighting == ClosestMeanHitLikelihood) {
 
 
-                Point pfree = lp;
-                pfree.x += (range - freeDelta) * cos(lp.theta + *angle);
-                pfree.y += (range - freeDelta) * sin(lp.theta + *angle);
-                pfree = pfree - phit;
-                IntPoint ipfree = map.world2map(pfree);
-                bool found = false;
-                Point bestMu(0., 0.);
-                for (int xx = -m_kernelSize; xx <= m_kernelSize; xx++)
-                    for (int yy = -m_kernelSize; yy <= m_kernelSize; yy++) {
-                        IntPoint pr = iphit + IntPoint(xx, yy);
-                        IntPoint pf = pr + ipfree;
-                        //AccessibilityState s=map.storage().cellState(pr);
-                        //if (s&Inside && s&Allocated){
-                        const PointAccumulator &cell = map.cell(pr);
-                        const PointAccumulator &fcell = map.cell(pf);
-                        if (((double) cell) > m_fullnessThreshold && ((double) fcell) < m_fullnessThreshold) {
-                            Point mu = phit - cell.mean();
-                            if (!found) {
-                                bestMu = mu;
-                                found = true;
-                            } else
-                                bestMu = (mu * mu) < (bestMu * bestMu) ? mu : bestMu;
-                        }
-                        //}
-                    }
-                if (found) {
-                    s += exp(-1. / m_gaussianSigma * bestMu * bestMu);
-                    c++;
-                }
-                if (!skip) {
-                    double f = (-1. / m_likelihoodSigma) * (bestMu * bestMu);
-                    l += (found) ? f : noHit;
-                }
+            switch(m_particleWeighting){
+                case ClosestMeanHitLikelihood:
+                    tmp_l = closestMeanHitLikelihood(lp, phit, *r, *angle, map, s, c);
+                    break;
+                case MeasurementLikelihood:
+                    tmp_l = measurementLikelihood(lp, phit, *r, *angle, map, s, c);
+                    break;
+                case ForwardSensorModel:
+                    tmp_l = measurementLikelihood(lp, phit, *r, *angle, map, s, c);
+                    break;
             }
-            else {
-                /*
-                 * For all other methods, we will consider all cells crossed by the beam and not just the endpoint.
-                 */
-                GridLineTraversalLine line;
-                line.points = m_linePoints;
-                GridLineTraversal::gridLine(ilp, iphit, &line);
 
-                double alpha_prior = map.getAlpha();
-                double beta_prior  = map.getBeta();
-
-                double numerator = 0;
-                double denominator = 0;
-
-                int i = 0;
-                // For all the cells that the beam travelled through (misses)
-                for (i = 0; i < line.num_points - 1 + out_of_range; i++) {
-                    const IntPoint i_miss_cell = line.points[i];
-                    const PointAccumulator &miss_cell = map.cell(i_miss_cell);
-                    int Hi = miss_cell.n;
-
-                    if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
-                        int Mi = miss_cell.visits - Hi;
-
-                        denominator = Hi + alpha_prior + Mi + beta_prior;
-
-                        if (denominator == 0.0)
-                            l += noHit;
-                        else {
-                            if (m_particleWeighting == MeasurementLikelihood) {
-                                numerator = Mi + beta_prior;
-                                if (numerator == 0)
-                                    l += zerologlikelihood;
-                                else
-                                    // p = (Mi + beta) / denominator
-                                    l += log(numerator) - log(denominator);
-                            }
-                            else if (m_particleWeighting == ForwardSensorModel) {
-                                numerator = 1 - (Hi + alpha_prior);
-                                if (numerator == 0)
-                                    l += zerologlikelihood;
-                                else
-                                    // p = 1 - (Hi + alpha) / denominator
-                                    l += log(numerator) - log(denominator);
-                            }
-                        }
-                    }
-                    else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
-                        double ri = computeCellR(map, lp, phit, i_miss_cell);
-                        double Ri = miss_cell.R;
-
-                        if (m_particleWeighting == MeasurementLikelihood) {
-                            denominator = Ri + beta_prior + ri;
-                            if (denominator == 0.0)
-                                l += noHit;
-                            else {
-                                numerator = Ri + beta_prior;
-                                if (numerator == 0)
-                                    l += zerologlikelihood;
-                                else
-                                    // p = pow(((Ri + beta) / denominator), (Hi + alpha))
-                                    l += (Hi + alpha_prior) * (log(numerator) - log(denominator));
-                            }
-                        }
-                        else if (m_particleWeighting == ForwardSensorModel) {
-                            if (Ri == 0.0)
-                                l += noHit;
-                            else {
-                                //double lambda = (Hi + alpha) / denominator;
-                                double lambda = Hi / Ri;
-                                if (lambda == 0 || ri == 0)
-                                    l += zerologlikelihood;
-                                else
-                                    // p = exp(-(lambda * ri))
-                                    l += -(lambda * ri);
-                            }
-                        }
-                    }
-                }
-                // For the endpoint cell
-                if (! out_of_range){
-                    IntPoint i_hit_cell = line.points[line.num_points -1];
-                    const PointAccumulator &hit_cell = map.cell(i_hit_cell);
-
-                    int Hi = hit_cell.n;
-
-                    if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
-                        int Mi = hit_cell.visits - Hi;
-
-                        if (m_particleWeighting == MeasurementLikelihood) {
-                            denominator = Hi + alpha_prior + Mi + beta_prior;
-                            if (denominator == 0)
-                                l += noHit;
-                            else {
-                                numerator = Hi + alpha_prior;
-
-                                if (numerator == 0)
-                                    l += zerologlikelihood;
-                                else
-                                    // p = (Hi + alpha) / denominator
-                                    l += log(numerator) - log(denominator);
-                            }
-                        }
-                        else if (m_particleWeighting == ForwardSensorModel) {
-                            denominator = Hi + Mi;
-                            if (denominator == 0)
-                                l += noHit;
-                            else {
-                                if (Hi == 0)
-                                    l += zerologlikelihood;
-                                else
-                                    // p = Hi / denominator
-                                    l += log(Hi) - log(denominator);
-                            }
-                        }
-                    }
-                    else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
-                        double ri = computeCellR(map, lp, phit, i_hit_cell);
-                        double Ri = hit_cell.R;
-
-                        if (m_particleWeighting == MeasurementLikelihood) {
-                            denominator = Ri + beta_prior + ri;
-                            if (denominator == 0.0)// || Hi + alpha == 0 || Ri + beta == 0)
-                                l += noHit;
-                            else {
-                                double n1 = Ri + beta_prior;
-                                double n2 = Hi + alpha_prior;
-                                if (n1 == 0 && n2 == 0)
-                                    l += noHit;
-                                else if (n1 == 0 || n2 == 0)
-                                    l += zerologlikelihood;
-                                else
-                                    // p = pow(((Ri + beta) / denominator), (Hi + alpha)) * ((Hi + alpha) / denominator)
-                                    l += log(n2) + (n2 * (log(n1) - log(denominator))) - log(denominator);
-                            }
-                        }
-                        else if (m_particleWeighting == ForwardSensorModel){
-                            denominator = Ri + beta_prior;
-
-                            if (denominator == 0.0)
-                                l += noHit;
-                            else {
-                                numerator = Hi + alpha_prior;
-
-                                if (numerator == 0)
-                                    l += zerologlikelihood;
-                                else {
-                                    //double lambda = (Hi + alpha) / denominator;
-                                    double lambda = numerator / denominator;
-                                    // p = lambda * exp(-(lambda * ri))
-                                    l += log(lambda) - (lambda * ri);
-                                }
-                            }
-                        }
-
-                    }
-                }
-                PointAccumulator cell = map.cell(iphit);
-                if (! out_of_range && cell.n){
-                    Point mu = phit - cell.mean();
-                    s += exp(-1. / m_gaussianSigma * mu * mu);
-                    c++;
-                }
-
+            if (isnan(tmp_l)){
+                l = -150;
+                break;
             }
+            else
+                l += tmp_l;
         }
+        // Return from log-likelihoods to likelihoods.
+        //if (m_particleWeighting == MeasurementLikelihood && l != 0)
+        //    l = exp(l);
+
         return c;
     }
+
 
 }
 
