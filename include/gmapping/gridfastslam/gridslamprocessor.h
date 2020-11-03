@@ -152,6 +152,8 @@ namespace GMapping {
                   double alpha0=1.0, double beta0=1.0,
                   bool doImprovePose=true, bool doMapUpdate=true);
 
+        void reInitForLocalization(OrientedPoint initialPose);
+
         void setMatchingParameters(double urange, double range, double sigma, int kernsize, double lopt, double aopt,
                                    int iterations, double likelihoodSigma = 1, double likelihoodGain = 1,
                                    unsigned int likelihoodSkip = 0,
@@ -193,6 +195,12 @@ namespace GMapping {
         inline const std::vector<unsigned int> &getIndexes() const { return m_indexes; }
 
         int getBestParticleIndex() const;
+
+        const OrientedPoint getBestPose() const;
+
+        const ScanMatcherMap getBestMap() const;
+
+        const OrientedPoint getAveragePose();
 
         //callbacks
         virtual void onOdometryUpdate();

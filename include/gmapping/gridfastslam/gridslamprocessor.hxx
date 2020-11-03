@@ -18,7 +18,7 @@ inline void GridSlamProcessor::scanMatch(const double *plainReading) {
 
     for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
         OrientedPoint corrected;
-        double score, l, s;
+        double score = 0, l, s;
 
         if (m_doImprovePose) {
             score = m_matcher.optimize(corrected, it->map, it->pose, plainReading);
@@ -48,10 +48,12 @@ inline void GridSlamProcessor::scanMatch(const double *plainReading) {
         m_matcher.invalidateActiveArea();
         m_matcher.computeActiveArea(it->map, it->pose, plainReading);
     }
-    if (m_outputStream.is_open())
-        m_outputStream << std::endl;
-    if (m_infoStream)
-        m_infoStream << "Average Scan Matching Score=" << sumScore / m_particles.size() << std::endl;
+    if (m_doImprovePose) {
+        if (m_outputStream.is_open())
+            m_outputStream << std::endl;
+        if (m_infoStream)
+            m_infoStream << "Average Scan Matching Score=" << sumScore / m_particles.size() << std::endl;
+    }
 }
 
 inline void GridSlamProcessor::normalize() {

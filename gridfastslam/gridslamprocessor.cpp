@@ -319,6 +319,31 @@ namespace GMapping {
         m_doMapUpdate = doMapUpdate;
     }
 
+    void GridSlamProcessor::reInitForLocalization(OrientedPoint initialPose) {
+
+        m_doMapUpdate = false;
+
+        // Clear the trajectory tree and the particles, and reinitialize them with
+        // the new initial pose and the map from the most likely particle
+        TNode *node = new TNode(initialPose, 0, 0, 0);
+        ScanMatcherMap lmap = getBestMap();
+        int size = m_particles.size();
+        m_particles.clear();
+        for (unsigned int i = 0; i < size; i++) {
+            m_particles.push_back(Particle(lmap));
+            m_particles.back().pose = initialPose;
+            m_particles.back().previousPose = initialPose;
+            m_particles.back().setWeight(0);
+            m_particles.back().previousIndex = 0;
+            m_particles.back().node = node;
+        }
+        m_neff = (double) size;
+        m_count = 0;
+        m_readingCount = 0;
+        m_linearDistance = m_angularDistance = 0;
+
+    }
+
     void GridSlamProcessor::processTruePos(const OdometryReading &o) {
         const OdometrySensor *os = dynamic_cast<const OdometrySensor *>(o.getSensor());
         if (os && os->isIdeal() && m_outputStream) {
@@ -529,6 +554,40 @@ namespace GMapping {
                 bi = i;
             }
         return (int) bi;
+    }
+
+    const OrientedPoint GridSlamProcessor::getBestPose() const{
+        return m_particles[getBestParticleIndex()].pose;
+    }
+
+    const ScanMatcherMap GridSlamProcessor::getBestMap() const{
+        return m_particles[getBestParticleIndex()].map;
+    }
+
+    const OrientedPoint GridSlamProcessor::getAveragePose() {
+        Point position_accum = Point(0.0, 0.0);
+        Point orientation_accum = Point(0.0, 0.0);
+        double weight_accum = 0;
+
+        normalize();
+
+        for (unsigned int i = 0; i < m_particles.size(); i++) {
+            double w = m_weights[i];
+            Particle p = m_particles[i];
+            double theta = p.pose.theta;
+
+            weight_accum += w;
+            position_accum = position_accum + (w * p.pose);
+            orientation_accum = orientation_accum + (w * Point(cos(theta), sin(theta)));
+        }
+
+        weight_accum = 1 / weight_accum;
+        position_accum = weight_accum * position_accum;
+        orientation_accum = weight_accum * orientation_accum;
+        double avg_theta = atan2(orientation_accum.y, orientation_accum.x);
+        OrientedPoint avg_pose = OrientedPoint(position_accum.x, position_accum.y, avg_theta);
+
+        return avg_pose;
     }
 
     void GridSlamProcessor::onScanmatchUpdate() {}
