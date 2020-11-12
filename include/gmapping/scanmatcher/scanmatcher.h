@@ -313,7 +313,15 @@ namespace GMapping {
                     break;
             }
 
-            l += tmp_l;
+            if (m_particleWeighting == MeasurementLikelihood){
+                if (tmp_l == 0) {
+                    l = 0;
+                    break;
+                }
+                l *= tmp_l;
+            }
+            else
+                l += tmp_l;
 
         }
         if (m_particleWeighting == MeasurementLikelihood)

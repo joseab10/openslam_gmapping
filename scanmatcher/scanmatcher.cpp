@@ -236,7 +236,7 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
              cellIsEndPt   = map.world2map(beamEnd) == cell;
 
         Point deltaB = beamEnd - beamStart;
-        // If the beam starts and ends in the cell
+        // If the beam starts and ends inside the cell
         if (cellIsStartPt && cellIsEndPt)
             return euclidianDist(beamStart, beamEnd);
 
@@ -247,10 +247,10 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
         Point cb0 = cellCenter - Point(delta, delta),
               cb1 = cellCenter + Point(delta, delta);
 
-        bool cx0InsideBeam = (beamStart.x < cb0.x < beamEnd.x) || (beamEnd.x < cb0.x < beamStart.x),
-             cy0InsideBeam = (beamStart.y < cb0.y < beamEnd.y) || (beamEnd.y < cb0.y < beamStart.y),
-             cx1InsideBeam = (beamStart.x < cb1.x < beamEnd.x) || (beamEnd.x < cb1.x < beamStart.x),
-             cy1InsideBeam = (beamStart.y < cb1.y < beamEnd.y) || (beamEnd.y < cb1.y < beamStart.y);
+        bool cx0InsideBeam = (beamStart.x <= cb0.x && cb0.x <= beamEnd.x) || (beamEnd.x <= cb0.x && cb0.x <= beamStart.x);
+        bool cy0InsideBeam = (beamStart.y <= cb0.y && cb0.y <= beamEnd.y) || (beamEnd.y <= cb0.y && cb0.y <= beamStart.y);
+        bool cx1InsideBeam = (beamStart.x <= cb1.x && cb1.x <= beamEnd.x) || (beamEnd.x <= cb1.x && cb1.x <= beamStart.x);
+        bool cy1InsideBeam = (beamStart.y <= cb1.y && cb1.y <= beamEnd.y) || (beamEnd.y <= cb1.y && cb1.y <= beamStart.y);
 
         // If cell not inside of beam
         if (!((cx0InsideBeam || cx1InsideBeam) && (cy0InsideBeam || cy1InsideBeam)))
@@ -303,7 +303,8 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                 iy1 = tmp;
             }
 
-            // If the beam doesn't fall inside the cell (Why shouldn't it though?)
+            // If the intersections don't fall inside the cell
+            // (Why shouldn't it though? Line algorithm might give cells that are not touched by the beam [Bresenham])
             if (cb0.x >= ix1 || ix0 >= cb1.x || cb0.y >= iy1 || iy0 >= cb1.y)
                 return 0;
 
@@ -1028,7 +1029,8 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                         return 0;
                     else
                         //l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
-                        l *= pow(numerator / denominator, exponent) * (exponent / denominator);
+                        //l *= pow(numerator / denominator, exponent) * (exponent / denominator);
+                        l *= 1 - pow(numerator / denominator, exponent);
                 }
                 // else, the beam travelled through it (or was a max_range)
                 else {
