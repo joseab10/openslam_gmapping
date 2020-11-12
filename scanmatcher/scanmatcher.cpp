@@ -46,7 +46,7 @@ namespace GMapping {
 	m_generateMap=false;
 */
 
-        m_linePoints = new IntPoint[20000];
+        m_linePoints = new IntPoint[60000];
 
         m_mapModel = ScanMatcherMap::MapModel::ReflectionModel;
         m_particleWeighting = ClosestMeanHitLikelihood;

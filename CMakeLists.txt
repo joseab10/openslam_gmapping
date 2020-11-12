@@ -108,9 +108,12 @@ add_library(scanmatcher
   scanmatcher/eig3.cpp)
 add_executable(scanmatch_test
   scanmatcher/scanmatch_test.cpp)
+add_executable(line_test
+        scanmatcher/line_test.cpp)
 add_executable(icptest
   scanmatcher/icptest.cpp)
 target_link_libraries(scanmatch_test scanmatcher)
+target_link_libraries(line_test scanmatcher)
 target_link_libraries(icptest scanmatcher)
 target_link_libraries(scanmatcher
   log sensor_range sensor_odometry sensor_base utils)
