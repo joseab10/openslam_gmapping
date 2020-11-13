@@ -253,7 +253,7 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
         bool cy1InsideBeam = (beamStart.y <= cb1.y && cb1.y <= beamEnd.y) || (beamEnd.y <= cb1.y && cb1.y <= beamStart.y);
 
         // If cell not inside of beam
-        if (!((cx0InsideBeam || cx1InsideBeam) && (cy0InsideBeam || cy1InsideBeam)))
+        if (!(cx0InsideBeam || cx1InsideBeam || cy0InsideBeam || cy1InsideBeam))
             return 0;
 
         if (abs(deltaB.x) < 1e-6){ // Beam is vertical
@@ -322,7 +322,8 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
 
                 /* Then, figure out which of the two intersection points lies within the beam
                 to compute the distance between the beam start|end and the intersect point. */
-                if (ex0 >= beamStart.x && ex0 <= beamEnd.x && ey0 >= beamStart.y && ey0 <= beamEnd.y){
+                if (((beamStart.x <= ex0 && ex0 <= beamEnd.x) || (beamEnd.x <= ex0 && ex0 <= beamStart.x)) &&
+                    ((beamStart.y <= ey0 && ey0 <= beamEnd.y) || (beamEnd.y <= ey0 && ey0 <= beamStart.y))){
                     end.x = ex0;
                     end.y = ey0;
                 }
@@ -334,7 +335,8 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
             }
             else if (cellIsEndPt){
                 start = beamEnd;
-                if (ex0 >= beamStart.x && ex0 <= beamEnd.x && ey0 >= beamStart.y && ey0 <= beamEnd.y){
+                if (((beamStart.x <= ex0 && ex0 <= beamEnd.x) || (beamEnd.x <= ex0 && ex0 <= beamStart.x)) &&
+                    ((beamStart.y <= ey0 && ey0 <= beamEnd.y) || (beamEnd.y <= ey0 && ey0 <= beamStart.y))){
                     end.x = ex0;
                     end.y = ey0;
                 }
@@ -382,27 +384,23 @@ void ScanMatcher::computeActiveArea(ScanMatcherMap& map, const OrientedPoint& p,
                 }
                 Point phit = lp + Point(d * cos(lp.theta + *angle), d * sin(lp.theta + *angle));
                 IntPoint p1 = map.world2map(phit);
-                // Distance that the ray traveled inside the map cell
-                double ri = 0;
                 //IntPoint linePoints[20000] ;
                 GridLineTraversalLine line;
                 line.points = m_linePoints;
                 GridLineTraversal::gridLine(p0, p1, &line);
                 int i = 0;
-                for (i = 0; i < line.num_points - 1 + out_of_range; i++) {
+                for (i = 0; i < line.num_points; i++) {
                     PointAccumulator &cell = map.cell(line.points[i]);
                     double e = -cell.entropy();
-                    ri = computeCellR(map, lp, phit, line.points[i]);
-                    cell.update(false, Point(0, 0), ri);
+                    // Cell was a hit if it is the last of the beam and it wasn't a max-range
+                    bool hit = !out_of_range && i == line.num_points - 1;
+                    // Hit point for point accumulation (only assigned when cell is hit)
+                    Point hit_point = hit ? phit : Point(0, 0);
+                    // Distance that the ray traveled inside the map cell
+                    double ri = computeCellR(map, lp, phit, line.points[i]);
+                    cell.update(hit, hit_point, ri);
 
                     e += cell.entropy();
-                    esum += e;
-                }
-                if (! out_of_range) {
-                    double e = -map.cell(p1).entropy();
-                    ri = computeCellR(map, lp, phit, line.points[line.num_points - 1]);
-                    map.cell(p1).update(true, phit, ri);
-                    e += map.cell(p1).entropy();
                     esum += e;
                 }
             }
@@ -1029,8 +1027,8 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                         return 0;
                     else
                         //l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
-                        //l *= pow(numerator / denominator, exponent) * (exponent / denominator);
-                        l *= 1 - pow(numerator / denominator, exponent);
+                        l *= pow(numerator / denominator, exponent) * (exponent / denominator);
+                        //l *= 1 - pow(numerator / denominator, exponent);
                 }
                 // else, the beam travelled through it (or was a max_range)
                 else {
