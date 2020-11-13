@@ -477,9 +477,9 @@ namespace GMapping {
                     }
                     m_outputStream << endl;
 
-                    m_outputStream << "WEIGHTS " << m_particles.size() << " ";
+                    m_outputStream << "RAW_WEIGHTS " << m_particles.size() << " ";
                     for (ParticleVector::const_iterator it = m_particles.begin(); it != m_particles.end(); it++) {
-                        m_outputStream << setiosflags(ios::fixed) << setprecision(6) << it->weight << " ";
+                        m_outputStream << setiosflags(ios::fixed) << setprecision(20) << it->weight << " ";
                     }
                     m_outputStream << endl;
                 }
