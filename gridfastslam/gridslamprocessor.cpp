@@ -200,6 +200,7 @@ namespace GMapping {
                                                   unsigned int likelihoodSkip, ScanMatcherMap::MapModel mapModel,
                                                   ScanMatcher::ParticleWeighting particleWeighting) {
         m_obsSigmaGain = likelihoodGain;
+        m_particleWeighting = particleWeighting;
         m_matcher.setMatchingParameters(urange, range, sigma, kernsize, lopt, aopt, iterations, likelihoodSigma,
                                         likelihoodSkip, mapModel, particleWeighting);
         if (m_infoStream)
@@ -459,6 +460,7 @@ namespace GMapping {
 
             if (m_count > 0) {
                 scanMatch(plainReading);
+                weightParticles(plainReading);
                 if (m_outputStream.is_open()) {
                     m_outputStream << "LASER_READING " << reading.size() << " ";
                     m_outputStream << setiosflags(ios::fixed) << setprecision(2);

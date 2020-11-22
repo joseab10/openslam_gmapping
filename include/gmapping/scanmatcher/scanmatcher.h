@@ -83,9 +83,8 @@ namespace GMapping {
         double closestMeanHitLikelihood(OrientedPoint &laser_pose, Point &end_point,
                                         double reading_range, double reading_bearing,
                                         const ScanMatcherMap &map, double &s, unsigned int &c) const;
-        double measurementLikelihood(OrientedPoint &laser_pose, Point &end_point,
-                                     double reading_range, double reading_bearing,
-                                     const ScanMatcherMap &map, double &s, unsigned int &c) const;
+        double measurementLikelihood(OrientedPoint &robot_pose, double reading_range, double reading_bearing,
+                                     const ScanMatcherMap &map) const;
 
         inline const double *laserAngles() const { return m_laserAngles; }
 
@@ -273,10 +272,7 @@ namespace GMapping {
     ScanMatcher::likelihoodAndScore(double &s, double &l, const ScanMatcherMap &map, const OrientedPoint &p,
                                     const double *readings) const {
         using namespace std;
-        if (m_particleWeighting == ClosestMeanHitLikelihood)
-            l = 0;
-        else
-            l = 1;
+        l = 0;
 
         s = 0;
         const double *angle = m_laserAngles + m_initialBeamsSkip;
@@ -294,38 +290,14 @@ namespace GMapping {
             if (skip) continue;
 
             double range = *r;
-            double tmp_l;
 
             Point phit = lp;
             phit.x += range * cos(lp.theta + *angle);
             phit.y += range * sin(lp.theta + *angle);
 
-
-            switch(m_particleWeighting){
-                case ClosestMeanHitLikelihood:
-                    tmp_l = closestMeanHitLikelihood(lp, phit, *r, *angle, map, s, c);
-                    break;
-                case MeasurementLikelihood:
-                    tmp_l = measurementLikelihood(lp, phit, *r, *angle, map, s, c);
-                    break;
-                case ForwardSensorModel:
-                    tmp_l = measurementLikelihood(lp, phit, *r, *angle, map, s, c);
-                    break;
-            }
-
-            if (m_particleWeighting == MeasurementLikelihood){
-                if (tmp_l == 0) {
-                    l = 0;
-                    break;
-                }
-                l *= tmp_l;
-            }
-            else
-                l += tmp_l;
+            l += closestMeanHitLikelihood(lp, phit, *r, *angle, map, s, c);
 
         }
-        if (m_particleWeighting == MeasurementLikelihood)
-            s = score(map, p, readings);
 
         return c;
     }

@@ -336,6 +336,8 @@ namespace GMapping {
         // stream in which to write the messages
         std::ostream &m_infoStream;
 
+        PARAM_SET_GET(ScanMatcher::ParticleWeighting, particleWeighting, protected, public, public);
+
         PARAM_SET_GET(bool, doImprovePose, protected, public, public);
         PARAM_SET_GET(bool, doMapUpdate, protected, public, public);
 
@@ -347,8 +349,16 @@ namespace GMapping {
         /**scanmatches all the particles*/
         inline void scanMatch(const double *plainReading);
 
+        /**computes the particle weights according to the map model*/
+        inline void weightParticles(const double *plainReading);
+
         /**normalizes the particle weights*/
         inline void normalize();
+
+        /**normalizes the particle weights in place*/
+        inline double softmax_normalize(std::vector<double> &values, double gain=1);
+
+        inline double linear_normalize(std::vector<double> &values);
 
         // return if a resampling occured or not
         inline bool resample(const double *plainReading, int adaptParticles,

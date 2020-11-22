@@ -7,8 +7,11 @@
 /**Just scan match every single particle.
 If the scan matching fails, the particle gets a default likelihood.*/
 inline void GridSlamProcessor::scanMatch(const double *plainReading) {
-    // sample a new pose from each scan in the reference
 
+    if (!m_doImprovePose)
+        return;
+
+    // sample a new pose from each scan in the reference
     double sumScore = 0;
 
     if (m_outputStream.is_open()) {
@@ -20,68 +23,160 @@ inline void GridSlamProcessor::scanMatch(const double *plainReading) {
         OrientedPoint corrected;
         double score = 0, l, s;
 
-        if (m_doImprovePose) {
-            score = m_matcher.optimize(corrected, it->map, it->pose, plainReading);
-            if(m_outputStream.is_open())
-                m_outputStream << score << " " << (score > m_minimumScore) << " ";
+        score = m_matcher.optimize(corrected, it->map, it->pose, plainReading);
+        if(m_outputStream.is_open())
+            m_outputStream << score << " " << (score > m_minimumScore) << " ";
 
-            //    it->pose=corrected;
-            if (score > m_minimumScore) {
-                it->pose = corrected;
-            } else {
-                if (m_infoStream) {
-                    m_infoStream << "Scan Matching Failed, using odometry. Likelihood=" << l << std::endl;
-                    m_infoStream << "lp:" << m_lastPartPose.x << " " << m_lastPartPose.y << " " << m_lastPartPose.theta
-                                 << std::endl;
-                    m_infoStream << "op:" << m_odoPose.x << " " << m_odoPose.y << " " << m_odoPose.theta << std::endl;
-                }
+        //    it->pose=corrected;
+        if (score > m_minimumScore) {
+            it->pose = corrected;
+        } else {
+            if (m_infoStream) {
+                m_infoStream << "Scan Matching Failed, using odometry. Likelihood=" << l << std::endl;
+                m_infoStream << "lp:" << m_lastPartPose.x << " " << m_lastPartPose.y << " " << m_lastPartPose.theta
+                             << std::endl;
+                m_infoStream << "op:" << m_odoPose.x << " " << m_odoPose.y << " " << m_odoPose.theta << std::endl;
             }
         }
 
-        m_matcher.likelihoodAndScore(s, l, it->map, it->pose, plainReading);
         sumScore += score;
-        it->weight += l;
-        it->weightSum += l;
+    }
+    if (m_outputStream.is_open())
+        m_outputStream << std::endl;
+    if (m_infoStream)
+        m_infoStream << "Average Scan Matching Score=" << sumScore / m_particles.size() << std::endl;
+}
 
+void GridSlamProcessor::weightParticles(const double *plainReading){
+    if (m_particleWeighting == ScanMatcher::ParticleWeighting::ClosestMeanHitLikelihood){
+        for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
+
+            double l, s;
+
+            m_matcher.likelihoodAndScore(s, l, it->map, it->pose, plainReading);
+
+            it->weight += l;
+            it->weightSum += l;
+        }
+    }
+    else if(m_particleWeighting == ScanMatcher::ParticleWeighting::MeasurementLikelihood){
+        int num_particles = m_particles.size();
+        int initial_beam_skip = m_matcher.getinitialBeamsSkip();
+        int likelihood_skip = m_matcher.getlikelihoodSkip();
+        int skip = 0;
+
+        const double *angles = m_matcher.laserAngles();
+        double max_range = std::max(m_matcher.getusableRange(), m_matcher.getlaserMaxRange());
+        // Get the maximum number of cells that a scan could have
+        double max_beam_cells = max_range / m_delta;
+
+        // Using 180 beams with 20.0m max_range and a map resolution of 0.05m as reference with
+        // 18 batches, i.e.: batch size of 10 beams.
+        double num_batches = max_beam_cells * (180 / 10) / (20.0 / 0.05);
+        int batch_beams = m_beams / num_batches;
+        // Compute the number of beams a batch should process before normalizing the weights.
+        batch_beams = std::max(1, batch_beams);
+
+        // initialize particle weights with 1
+        for (ParticleVector::iterator it=m_particles.begin(); it < m_particles.end(); it++) {
+            it->weight = 1;
+            it->weightSum = 0;
+        }
+
+        // For each batch of beams
+        for (int b = initial_beam_skip; b < m_beams; b += batch_beams){
+
+            std::vector<double> log_likelihoods(num_particles, 0.0);
+            // For each beam in the batch
+            for (int i = 0; i < batch_beams && b + i < m_beams; i++) {
+                skip++;
+                skip = skip > likelihood_skip ? 0 : skip;
+                if (skip) continue;
+
+                double reading_range = plainReading[b + i];
+                double reading_bearing = angles[b + i];
+
+                // For each particle
+                for (ParticleVector::iterator it = m_particles.begin(); it < m_particles.end(); i++) {
+
+                    if (log_likelihoods[b + i] == -std::numeric_limits<double>::max())
+                        continue;
+
+                    double tmp_likelihood = m_matcher.measurementLikelihood(it->pose,
+                                                                            reading_range, reading_bearing, it->map);
+
+                    if (isnan(tmp_likelihood))
+                        log_likelihoods[b + i] = -std::numeric_limits<double>::max();
+                    else
+                        log_likelihoods[b + i] += tmp_likelihood;
+                }
+            }
+
+            linear_normalize(log_likelihoods);
+
+            for (int j = 0; j < m_particles.size(); j++)
+                m_particles[j].weight += log_likelihoods[j];
+
+        }
+    }
+
+    for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
         //set up the selective copy of the active area
         //by detaching the areas that will be updated
         m_matcher.invalidateActiveArea();
         m_matcher.computeActiveArea(it->map, it->pose, plainReading);
     }
-    if (m_doImprovePose) {
-        if (m_outputStream.is_open())
-            m_outputStream << std::endl;
-        if (m_infoStream)
-            m_infoStream << "Average Scan Matching Score=" << sumScore / m_particles.size() << std::endl;
-    }
 }
 
 inline void GridSlamProcessor::normalize() {
-    //normalize the log m_weights
-    double gain = 1. / (m_obsSigmaGain * m_particles.size());
-    double lmax = -std::numeric_limits<double>::max();
-    for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
-        lmax = it->weight > lmax ? it->weight : lmax;
-    }
-    //cout << "!!!!!!!!!!! maxwaight= "<< lmax << endl;
 
     m_weights.clear();
-    double wcum = 0;
-    m_neff = 0;
     for (std::vector<Particle>::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
-        m_weights.push_back(exp(gain * (it->weight - lmax)));
-        wcum += m_weights.back();
-        //cout << "l=" << it->weight<< endl;
+        m_weights.push_back(it->weight);
+    }
+    double gain = 1;
+
+    if (m_particleWeighting == ScanMatcher::ParticleWeighting::ClosestMeanHitLikelihood)
+        gain = 1. / (m_obsSigmaGain * m_particles.size());
+
+    m_neff = softmax_normalize(m_weights, gain);
+
+}
+
+inline double GridSlamProcessor::softmax_normalize(std::vector<double> &values, double gain){
+    // Perform a Softmax over the particle weights to normalize them an make them add up to one.
+    double v_max = -std::numeric_limits<double>::max();
+
+    // Find max value
+    for (std::vector<double>::iterator it = values.begin(); it != values.end(); it++){
+        v_max = *it > v_max ? *it : v_max;
     }
 
-    m_neff = 0;
-    for (std::vector<double>::iterator it = m_weights.begin(); it != m_weights.end(); it++) {
-        *it = *it / wcum;
-        double w = *it;
-        m_neff += w * w;
-    }
-    m_neff = 1. / m_neff;
+    double v_acc = 0;
 
+    for (std::vector<double>::iterator it = values.begin(); it != values.end(); it++){
+        // Exponentiate all weights minus the maximum for numerical stability.
+        *it = exp(gain * (*it - v_max));
+    }
+
+    return linear_normalize(values);
+}
+
+inline double GridSlamProcessor::linear_normalize(std::vector<double> &values){
+
+    double v_acc = 0;
+
+    for (std::vector<double>::iterator it = values.begin(); it != values.end(); it++){
+        v_acc += *it;
+    }
+
+    double neff = 0;
+    // Divide all weights by the sum of all values.
+    for (std::vector<double>::iterator it = values.begin(); it != values.end(); it++){
+        *it /= v_acc;
+        neff += (*it) * (*it);
+    }
+    return neff;
 }
 
 inline bool GridSlamProcessor::resample(const double *plainReading, int adaptSize, const RangeReading *reading) {

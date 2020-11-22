@@ -951,13 +951,22 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
         return (found) ? f : noHit;
     }
 
-    double ScanMatcher::measurementLikelihood(OrientedPoint &laser_pose, Point &end_point,
+    double ScanMatcher::measurementLikelihood(OrientedPoint &robot_pose,
                                               double reading_range, double reading_bearing,
-                                              const ScanMatcherMap &map,
-                                              double &s, unsigned int &c) const {
+                                              const ScanMatcherMap &map) const {
 
-        //double l = 0;
-        double l = 1;
+        double l = 0;
+        //double l = 1;
+
+        OrientedPoint laser_pose = robot_pose;
+        laser_pose.x += cos(robot_pose.theta) * m_laserPose.x - sin(robot_pose.theta) * m_laserPose.y;
+        laser_pose.y += sin(robot_pose.theta) * m_laserPose.x + cos(robot_pose.theta) * m_laserPose.y;
+        laser_pose.theta += m_laserPose.theta;
+
+        Point end_point = laser_pose;
+        end_point.x += reading_range * cos(laser_pose.theta + reading_bearing);
+        end_point.y += reading_range * sin(laser_pose.theta + reading_bearing);
+
 
         IntPoint ilp = map.world2map(laser_pose);
         IntPoint iphit = map.world2map(end_point);
@@ -994,16 +1003,16 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                 // If cell is the endpoint and was a hit
                 if (delta_i)
                     numerator = Hi + alpha_prior;
-                    // else, the beam travelled through it (or was max_range)
+                // else, the beam travelled through it (or was max_range)
                 else
                     numerator = Mi + beta_prior;
 
                 if (numerator == 0)
-                    //return std::numeric_limits<double>::quiet_NaN();
-                    return 0;
+                    return std::numeric_limits<double>::quiet_NaN();
+                    // return 0;
                 else
-                    //l += log(numerator) - log(denominator);
-                    l *= numerator / denominator;
+                    l += log(numerator) - log(denominator);
+                    //l *= numerator / denominator;
             }
             else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
                 double ri = computeCellR(map, laser_pose, end_point, visited_cell_index);
@@ -1015,7 +1024,7 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
 
 
                 // Ignore a cell if it hasn't been visited in the past and,
-                // somehow, neither this time (line discretization function returning cells not traversed by beam)
+                // somehow, neither this time (e.g.: line discretization function returning cells not traversed by beam)
                 // I.e.: both Ri and ri are 0
                 if (denominator == 0.0)
                     continue;
@@ -1023,30 +1032,23 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                 // If cell is the endpoint and was a hit (not a max_range reading)
                 if (delta_i) {
                     if (numerator == 0 || exponent == 0)
-                        //return std::numeric_limits<double>::quiet_NaN();
-                        return 0;
+                        return std::numeric_limits<double>::quiet_NaN();
+                        // return 0;
                     else
-                        //l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
-                        l *= pow(numerator / denominator, exponent) * (exponent / denominator);
-                        //l *= 1 - pow(numerator / denominator, exponent);
+                        l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
+                        // l *= pow(numerator / denominator, exponent) * (exponent / denominator); // Real Formula
+                        // l *= 1 - pow(numerator / denominator, exponent); // Inverse reflection formula (test)
                 }
                 // else, the beam travelled through it (or was a max_range)
                 else {
                     if (numerator == 0)
-                        //return std::numeric_limits<double>::quiet_NaN();
-                        return 0;
+                        return std::numeric_limits<double>::quiet_NaN();
+                        // return 0;
                     else
-                        //l += exponent * (log(numerator) - log(denominator));
-                        l *= pow(numerator / denominator, exponent);
+                        l += exponent * (log(numerator) - log(denominator));
+                        // l *= pow(numerator / denominator, exponent);
                 }
             }
-        }
-
-        PointAccumulator cell = map.cell(iphit);
-        if (! out_of_range && cell.n){
-            //Point mu = end_point - cell.mean();
-            //s += exp(-1. / m_gaussianSigma * mu * mu);
-            c++;
         }
 
         return l;
