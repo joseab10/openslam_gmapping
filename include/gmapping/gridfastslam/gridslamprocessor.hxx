@@ -79,7 +79,7 @@ void GridSlamProcessor::weightParticles(const double *plainReading){
 
         // initialize particle weights with 1
         for (ParticleVector::iterator it=m_particles.begin(); it < m_particles.end(); it++) {
-            it->weight = 1;
+            it->weight = 0;
             it->weightSum = 0;
         }
 
@@ -97,24 +97,25 @@ void GridSlamProcessor::weightParticles(const double *plainReading){
                 double reading_bearing = angles[b + i];
 
                 // For each particle
-                for (ParticleVector::iterator it = m_particles.begin(); it < m_particles.end(); i++) {
+                for (int part = 0; part < num_particles; part++) {
 
-                    if (log_likelihoods[b + i] == -std::numeric_limits<double>::max())
+                    if (log_likelihoods[part] == -std::numeric_limits<double>::max())
                         continue;
 
-                    double tmp_likelihood = m_matcher.measurementLikelihood(it->pose,
-                                                                            reading_range, reading_bearing, it->map);
+                    double tmp_likelihood = m_matcher.measurementLikelihood(m_particles[part].pose,
+                                                                            reading_range, reading_bearing,
+                                                                            m_particles[part].map);
 
                     if (isnan(tmp_likelihood))
-                        log_likelihoods[b + i] = -std::numeric_limits<double>::max();
+                        log_likelihoods[part] = -std::numeric_limits<double>::max();
                     else
-                        log_likelihoods[b + i] += tmp_likelihood;
+                        log_likelihoods[part] += tmp_likelihood;
                 }
             }
 
             linear_normalize(log_likelihoods);
 
-            for (int j = 0; j < m_particles.size(); j++)
+            for (int j = 0; j < num_particles; j++)
                 m_particles[j].weight += log_likelihoods[j];
 
         }
