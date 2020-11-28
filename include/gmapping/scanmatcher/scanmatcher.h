@@ -273,11 +273,7 @@ namespace GMapping {
     ScanMatcher::likelihoodAndScore(double &s, double &l, const ScanMatcherMap &map, const OrientedPoint &p,
                                     const double *readings) const {
         using namespace std;
-        if (m_particleWeighting == ClosestMeanHitLikelihood)
-            l = 0;
-        else
-            l = 1;
-
+        l = 0;
         s = 0;
         const double *angle = m_laserAngles + m_initialBeamsSkip;
         OrientedPoint lp = p;
@@ -314,14 +310,14 @@ namespace GMapping {
             }
 
             if (m_particleWeighting == MeasurementLikelihood){
-                if (tmp_l == 0) {
-                    l = 0;
+                if (isnan(tmp_l)) {
+                    l = - std::numeric_limits<double>::max();
                     break;
                 }
-                l *= tmp_l;
+
             }
-            else
-                l += tmp_l;
+
+            l += tmp_l;
 
         }
         if (m_particleWeighting == MeasurementLikelihood)

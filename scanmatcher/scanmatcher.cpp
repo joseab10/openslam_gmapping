@@ -956,8 +956,7 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                                               const ScanMatcherMap &map,
                                               double &s, unsigned int &c) const {
 
-        //double l = 0;
-        double l = 1;
+        double l = 0;
 
         IntPoint ilp = map.world2map(laser_pose);
         IntPoint iphit = map.world2map(end_point);
@@ -994,16 +993,14 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                 // If cell is the endpoint and was a hit
                 if (delta_i)
                     numerator = Hi + alpha_prior;
-                    // else, the beam travelled through it (or was max_range)
+                // else, the beam travelled through it (or was max_range)
                 else
                     numerator = Mi + beta_prior;
 
                 if (numerator == 0)
-                    //return std::numeric_limits<double>::quiet_NaN();
-                    return 0;
+                    return std::numeric_limits<double>::quiet_NaN();
                 else
-                    //l += log(numerator) - log(denominator);
-                    l *= numerator / denominator;
+                    l += log(numerator) - log(denominator);
             }
             else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
                 double ri = computeCellR(map, laser_pose, end_point, visited_cell_index);
@@ -1023,29 +1020,22 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                 // If cell is the endpoint and was a hit (not a max_range reading)
                 if (delta_i) {
                     if (numerator == 0 || exponent == 0)
-                        //return std::numeric_limits<double>::quiet_NaN();
-                        return 0;
+                        return std::numeric_limits<double>::quiet_NaN();
                     else
-                        //l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
-                        l *= pow(numerator / denominator, exponent) * (exponent / denominator);
-                        //l *= 1 - pow(numerator / denominator, exponent);
+                        l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
                 }
                 // else, the beam travelled through it (or was a max_range)
                 else {
                     if (numerator == 0)
-                        //return std::numeric_limits<double>::quiet_NaN();
-                        return 0;
+                        return std::numeric_limits<double>::quiet_NaN();
                     else
-                        //l += exponent * (log(numerator) - log(denominator));
-                        l *= pow(numerator / denominator, exponent);
+                        l += exponent * (log(numerator) - log(denominator));
                 }
             }
         }
 
         PointAccumulator cell = map.cell(iphit);
         if (! out_of_range && cell.n){
-            //Point mu = end_point - cell.mean();
-            //s += exp(-1. / m_gaussianSigma * mu * mu);
             c++;
         }
 
