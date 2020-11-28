@@ -83,6 +83,8 @@ void GridSlamProcessor::weightParticles(const double *plainReading){
             it->weightSum = 0;
         }
 
+        std::vector<double> weights(num_particles, 0.0);
+
         // For each batch of beams
         for (int b = initial_beam_skip; b < m_beams; b += batch_beams){
 
@@ -113,12 +115,19 @@ void GridSlamProcessor::weightParticles(const double *plainReading){
                 }
             }
 
-            linear_normalize(log_likelihoods);
+            softmax_normalize(log_likelihoods);
 
             for (int j = 0; j < num_particles; j++)
-                m_particles[j].weight += log_likelihoods[j];
+                weights[j] += log(log_likelihoods[j]);
+
+            softmax_normalize(weights);
+
+            for (int j = 0; j < num_particles; j++)
+                weights[j] = log(weights[j]);
 
         }
+        for (int j = 0; j < num_particles; j++)
+            m_particles[j].weight = weights[j];
     }
 
     for (ParticleVector::iterator it = m_particles.begin(); it != m_particles.end(); it++) {
@@ -165,19 +174,29 @@ inline double GridSlamProcessor::softmax_normalize(std::vector<double> &values, 
 
 inline double GridSlamProcessor::linear_normalize(std::vector<double> &values){
 
-    double v_acc = 0;
+    double v_acc = 0, v_cnt = 0;
 
     for (std::vector<double>::iterator it = values.begin(); it != values.end(); it++){
         v_acc += *it;
+        v_cnt ++;
     }
+
+    if (v_acc != 0)
+        v_acc = 1 / v_acc;
+    if (v_cnt != 0)
+        v_cnt = 1 / v_cnt;
 
     double neff = 0;
     // Divide all weights by the sum of all values.
     for (std::vector<double>::iterator it = values.begin(); it != values.end(); it++){
-        *it /= v_acc;
+        if (v_acc == 0)
+            *it = v_cnt;
+        else
+            *it *= v_acc;
         neff += (*it) * (*it);
     }
-    return neff;
+
+    return 1 / neff;
 }
 
 inline bool GridSlamProcessor::resample(const double *plainReading, int adaptSize, const RangeReading *reading) {
