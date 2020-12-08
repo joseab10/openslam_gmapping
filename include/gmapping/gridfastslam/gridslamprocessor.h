@@ -158,7 +158,8 @@ namespace GMapping {
                                    int iterations, double likelihoodSigma = 1, double likelihoodGain = 1,
                                    unsigned int likelihoodSkip = 0,
                                    ScanMatcherMap::MapModel mapModel = ScanMatcherMap::MapModel::ReflectionModel,
-                                   ScanMatcher::ParticleWeighting particleWeighting = ScanMatcher::ParticleWeighting::ClosestMeanHitLikelihood);
+                                   ScanMatcher::ParticleWeighting particleWeighting = ScanMatcher::ParticleWeighting::ClosestMeanHitLikelihood,
+                                   double overconfidenceUniformWeight = 0.0);
 
         void setMotionModelParameters(double srr, double srt, double str, double stt);
 

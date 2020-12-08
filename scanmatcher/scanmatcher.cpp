@@ -878,7 +878,8 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
     void ScanMatcher::setMatchingParameters
             (double urange, double range, double sigma, int kernsize, double lopt, double aopt, int iterations,
              double likelihoodSigma, unsigned int likelihoodSkip,
-             ScanMatcherMap::MapModel mapModel, ParticleWeighting particleWeighting) {
+             ScanMatcherMap::MapModel mapModel, ParticleWeighting particleWeighting,
+             double overconfidenceUniformWeight) {
         m_usableRange = urange;
         m_laserMaxRange = range;
         m_kernelSize = kernsize;
@@ -891,6 +892,7 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
 
         m_mapModel = mapModel;
         m_particleWeighting = particleWeighting;
+        m_overconfidenceUniformWeight = overconfidenceUniformWeight;
     }
 
 
@@ -956,12 +958,15 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                                               const ScanMatcherMap &map,
                                               double &s, unsigned int &c) const {
 
-        double l = 0;
+        double log_l = 0;
 
         IntPoint ilp = map.world2map(laser_pose);
         IntPoint iphit = map.world2map(end_point);
 
         bool out_of_range = reading_range >= m_usableRange;
+
+        if (out_of_range)
+            reading_range = m_usableRange;
 
         GridLineTraversalLine line;
         line.points = m_linePoints;
@@ -981,6 +986,8 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
             // cell i reflected the beam if true, travelled through if false.
             bool delta_i = (i == line.num_points - 1) && !out_of_range;
 
+            double l;
+
             if (m_mapModel == ScanMatcherMap::MapModel::ReflectionModel) {
                 int Mi = visited_cell.visits - Hi;
 
@@ -997,10 +1004,13 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                 else
                     numerator = Mi + beta_prior;
 
-                if (numerator == 0)
+                l = numerator / denominator;
+                l = overconfidenceUniformNoise(l, out_of_range);
+
+                if (l == 0)
                     return std::numeric_limits<double>::quiet_NaN();
                 else
-                    l += log(numerator) - log(denominator);
+                    log_l += log(l);
             }
             else if (m_mapModel == ScanMatcherMap::MapModel::ExpDecayModel){
                 double ri = computeCellR(map, laser_pose, end_point, visited_cell_index);
@@ -1010,7 +1020,6 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                 numerator = Ri + beta_prior;
                 denominator = numerator + ri;
 
-
                 // Ignore a cell if it hasn't been visited in the past and,
                 // somehow, neither this time (line discretization function returning cells not traversed by beam)
                 // I.e.: both Ri and ri are 0
@@ -1018,19 +1027,18 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
                     continue;
 
                 // If cell is the endpoint and was a hit (not a max_range reading)
-                if (delta_i) {
-                    if (numerator == 0 || exponent == 0)
-                        return std::numeric_limits<double>::quiet_NaN();
-                    else
-                        l += exponent * (log(numerator) - log(denominator)) + log(exponent) - log(denominator);
-                }
+                if (delta_i)
+                    l = pow(numerator / denominator, exponent) * (exponent / denominator);
                 // else, the beam travelled through it (or was a max_range)
-                else {
-                    if (numerator == 0)
-                        return std::numeric_limits<double>::quiet_NaN();
-                    else
-                        l += exponent * (log(numerator) - log(denominator));
-                }
+                else
+                    l = pow(numerator / denominator, exponent);
+
+                l = overconfidenceUniformNoise(l, out_of_range);
+
+                if (l == 0)
+                    return std::numeric_limits<double>::quiet_NaN();
+                else
+                    log_l += log(l);
             }
         }
 
@@ -1039,7 +1047,21 @@ void ScanMatcher::registerScan(ScanMatcherMap& map, const OrientedPoint& p, cons
             c++;
         }
 
-        return l;
+        return log_l;
+    }
+
+    double ScanMatcher::overconfidenceUniformNoise(double l, bool out_of_range) const{
+        // To avoid overconfidence, add random uniform noise.
+
+        if (m_overconfidenceUniformWeight == 0)
+            return l;
+
+        double c2 = m_overconfidenceUniformWeight, c1 = 1 - c2;
+
+        if (out_of_range)
+            return (c1 * l) + c2;
+        else
+            return (c1 * l) + (c2 / m_usableRange);
     }
 
 }

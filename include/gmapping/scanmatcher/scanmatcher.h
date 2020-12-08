@@ -59,7 +59,8 @@ namespace GMapping {
                 (double urange, double range, double sigma, int kernsize, double lopt, double aopt, int iterations,
                  double likelihoodSigma = 1, unsigned int likelihoodSkip = 0,
                  ScanMatcherMap::MapModel mapModel = ScanMatcherMap::MapModel::ReflectionModel,
-                 ParticleWeighting particleWeighting = ParticleWeighting::ClosestMeanHitLikelihood);
+                 ParticleWeighting particleWeighting = ParticleWeighting::ClosestMeanHitLikelihood,
+                 double overconfidenceUniformWeight = 0.05);
 
         void invalidateActiveArea();
 
@@ -86,6 +87,8 @@ namespace GMapping {
         double measurementLikelihood(OrientedPoint &laser_pose, Point &end_point,
                                      double reading_range, double reading_bearing,
                                      const ScanMatcherMap &map, double &s, unsigned int &c) const;
+
+        double overconfidenceUniformNoise(double l, bool out_of_range) const;
 
         inline const double *laserAngles() const { return m_laserAngles; }
 
@@ -148,6 +151,8 @@ namespace GMapping {
     PARAM_SET_GET(double, freeCellRatio, protected, public, public)
 
     PARAM_SET_GET(unsigned int, initialBeamsSkip, protected, public, public)
+
+    PARAM_SET_GET(double, overconfidenceUniformWeight, protected, public, public)
 
         // allocate this large array only once
         IntPoint *m_linePoints;
